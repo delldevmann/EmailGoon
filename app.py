@@ -60,6 +60,7 @@ headers = {'User-Agent': random.choice(USER_AGENTS)}
 try:
     response = requests.get(url, headers=headers)
     response.raise_for_status()  # Raise an exception for HTTP errors
+    response.encoding = response.apparent_encoding  # Ensure the correct encoding is used
 except requests.exceptions.RequestException as e:
     st.error(f"An error occurred: {e}")
 else:
