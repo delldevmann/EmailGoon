@@ -4,8 +4,13 @@ import streamlit as st
 import re
 import json
 
+# Setting page configuration
 st.set_page_config(page_title='Email Scraper', page_icon='⚒️', initial_sidebar_state="auto", menu_items=None)
 st.title("⚒️ Email Scraper")
+
+# Initialize favorites list in session state if not already present
+if 'favorites' not in st.session_state:
+    st.session_state.favorites = []
 
 def validate_and_format_url(url):
     """Ensure the URL starts with http:// or https://, otherwise prepend https://."""
@@ -13,8 +18,24 @@ def validate_and_format_url(url):
         return "https://" + url
     return url
 
+# Sidebar for managing favorites
+st.sidebar.title("🔖 Favorites")
+selected_favorite = st.sidebar.selectbox("Select a favorite URL", options=st.session_state.favorites)
+
+if st.sidebar.button("Remove selected favorite"):
+    if selected_favorite in st.session_state.favorites:
+        st.session_state.favorites.remove(selected_favorite)
+        st.experimental_rerun()  # Refresh the page to update the list
+
 # Input field for the URL
-url = st.text_input("Enter URL to scrape emails from", "https://stan.store/brydon")
+url = st.text_input("Enter URL to scrape emails from", selected_favorite if selected_favorite else "https://stan.store/brydon")
+
+# Button to add the current URL to the favorites list
+if st.button("Add to Favorites"):
+    url = validate_and_format_url(url)
+    if url not in st.session_state.favorites:
+        st.session_state.favorites.append(url)
+        st.success(f"Added {url} to favorites!")
 
 # Validate and format the URL
 url = validate_and_format_url(url)
