@@ -10,8 +10,8 @@ import time
 from io import BytesIO
 
 # Setting page configuration
-st.set_page_config(page_title='Advanced Email Scraper', page_icon='⚒️', initial_sidebar_state="auto", menu_items=None)
-st.title("⚒️ Advanced Email Scraper")
+st.set_page_config(page_title='Streamlit Cloud Email Harvester', page_icon='⚒️', initial_sidebar_state="auto", menu_items=None)
+st.title("⚒️ Email Harvester")
 
 # Initialize logging
 logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')
