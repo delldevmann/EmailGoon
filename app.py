@@ -5,7 +5,6 @@ from bs4 import BeautifulSoup
 import re
 import pandas as pd
 from urllib.parse import urlparse
-import dns.resolver
 import logging
 import sqlite3
 import enum
@@ -13,7 +12,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
 from datetime import datetime
-import random
 from playwright.async_api import async_playwright
 from playwright_stealth import stealth_async
 
@@ -69,12 +67,29 @@ class ProxyScanner:
         # Placeholder for proxy fetching logic.
         return []
 
+# EmailExtractor Class
+class EmailExtractor:
+    def __init__(self):
+        # Compile a regular expression for matching email addresses
+        self.regexp = re.compile(
+            r"""(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])"""
+        )
+
+    @property
+    def name(self) -> str:
+        return "email"
+
+    def extract_emails(self, page_source: str) -> set:
+        """Extract emails from a string (webpage content)"""
+        return {i for i in self.regexp.findall(page_source)}
+
 # Email Harvester Class
 class EmailHarvester:
     def __init__(self, use_proxies):
         self.proxy_scanner = ProxyScanner() if use_proxies else None
         self.session = None
         self.use_proxies = use_proxies
+        self.extractor = EmailExtractor()  # Add the email extractor here
 
     async def initialize(self):
         self.session = aiohttp.ClientSession()
@@ -95,47 +110,22 @@ class EmailHarvester:
 
             try:
                 await page.goto(url)
-                await page.wait_for_load_state("domcontentloaded")  # Wait for content to load
+                await page.wait_for_load_state("networkidle")  # Wait for all network activity to stop
                 content = await page.content()
                 soup = BeautifulSoup(content, 'html.parser')
-                emails = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", str(soup))
-                return list(set(emails))
+                emails = self.extractor.extract_emails(str(soup))  # Extract emails using EmailExtractor
+                return list(emails)
             except Exception as e:
                 logging.error(f"Error fetching page with Playwright: {e}")
                 return []
             finally:
                 await browser.close()
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=5))
-    async def fetch_url_with_proxy(self, url, max_depth):
-        try:
-            if self.use_proxies:
-                proxies = self.proxy_scanner.fetch_proxies()
-                # Implement proxy handling logic here
-                pass
-            else:
-                if 'wired.com' in url:  # Use Playwright for JavaScript-heavy websites
-                    return await self.fetch_url_with_playwright(url)
-
-                async with self.session.get(url) as response:
-                    if response.status != 200:
-                        logging.error(f"Failed to fetch {url}: Status {response.status}")
-                        return []
-                    content = await response.text()
-                    soup = BeautifulSoup(content, 'html.parser')
-                    emails = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", str(soup))
-                    return list(set(emails))
-        except aiohttp.ClientError as e:
-            logging.error(f"Network or client error fetching {url}: {e}")
-            return []
-        except Exception as e:
-            logging.error(f"Unexpected error fetching {url}: {e}")
-            return []
-
     async def harvest_emails(self, urls: list, max_depth: int = 2) -> list:
+        """Scrape emails from the given list of URLs."""
         all_emails = []
         for url in urls:
-            emails = await self.fetch_url_with_proxy(url, max_depth=max_depth)
+            emails = await self.fetch_url_with_playwright(url)
             all_emails.extend(emails)
         return list(set(all_emails))
 
