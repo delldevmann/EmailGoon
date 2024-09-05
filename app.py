@@ -20,8 +20,8 @@ logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctim
 logger = logging.getLogger(__name__)
 
 # Streamlit page configuration
-st.set_page_config(page_title='Enhanced Email Harvester', page_icon='⚒️', layout="wide")
-st.title("⚒️ Enhanced Email Harvester with Proxy and Scheduling Support")
+st.set_page_config(page_title='Enhanced Email Harvester', page_icon='🌾', layout="wide")
+st.title("🌾 Streamit Cloud Email Harvester ")
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
