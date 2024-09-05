@@ -14,6 +14,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
 from datetime import datetime
 import random
+from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
 
 # Configure logging
 logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -81,6 +83,29 @@ class EmailHarvester:
         if self.session:
             await self.session.close()
 
+    async def fetch_url_with_playwright(self, url):
+        """Use Playwright with stealth mode to scrape JavaScript-heavy websites."""
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
+
+            # Activate stealth mode
+            await stealth_async(page)
+
+            try:
+                await page.goto(url)
+                await page.wait_for_load_state("domcontentloaded")  # Wait for content to load
+                content = await page.content()
+                soup = BeautifulSoup(content, 'html.parser')
+                emails = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", str(soup))
+                return list(set(emails))
+            except Exception as e:
+                logging.error(f"Error fetching page with Playwright: {e}")
+                return []
+            finally:
+                await browser.close()
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=5))
     async def fetch_url_with_proxy(self, url, max_depth):
         try:
@@ -89,13 +114,16 @@ class EmailHarvester:
                 # Implement proxy handling logic here
                 pass
             else:
+                if 'wired.com' in url:  # Use Playwright for JavaScript-heavy websites
+                    return await self.fetch_url_with_playwright(url)
+                
                 async with self.session.get(url) as response:
                     if response.status != 200:
                         logging.error(f"Failed to fetch {url}: Status {response.status}")
                         return []
                     content = await response.text()
                     soup = BeautifulSoup(content, 'html.parser')
-                    emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', str(soup))
+                    emails = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", str(soup))
                     return list(set(emails))
         except aiohttp.ClientError as e:
             logging.error(f"Network or client error fetching {url}: {e}")
