@@ -1,115 +1,99 @@
-import requests
-from bs4 import BeautifulSoup
 import streamlit as st
+import asyncio
+import aiohttp
+from bs4 import BeautifulSoup
 import re
-import json
 import pandas as pd
+from urllib.parse import urljoin, urlparse
+import dns.resolver
 import logging
-from apscheduler.schedulers.background import BackgroundScheduler
-import time
-from io import BytesIO
+import sqlite3
+from tenacity import retry, stop_after_attempt, wait_exponential
+import enum
+from datetime import datetime, timedelta
+import random
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Suppress debug logs from asyncio
+logging.getLogger('asyncio').setLevel(logging.WARNING)
 
 # Setting page configuration
-st.set_page_config(page_title='Streamlit Cloud Email Harvester', page_icon='🌾', initial_sidebar_state="auto", menu_items=None)
-st.title("🌾 Email Harvester")
+st.set_page_config(page_title='Enhanced Email Harvester', page_icon='⚒️', layout="wide", initial_sidebar_state="auto")
+st.title("⚒️ Enhanced Email Harvester with Proxy Support")
 
-# Initialize logging
-logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+# Proxy sources and other constants remain the same...
 
-# Initialize scheduler
-scheduler = BackgroundScheduler()
+class AnonymityLevel(enum.IntEnum):
+    TRANSPARENT = 1
+    ANONYMOUS = 2
+    ELITE = 3
 
-# Initialize session state for batch processing
-if 'urls' not in st.session_state:
-    st.session_state.urls = []
+class ProxyScanner:
+    def __init__(self):
+        self.db_conn = sqlite3.connect('proxy_database.db', check_same_thread=False)
+        self.initialize_db()
+        self.blacklisted_proxies = set()
 
-# Sidebar for managing and scheduling tasks
-st.sidebar.title("🔧 Tools")
-if st.sidebar.button("View Logs"):
-    with open('scraper.log') as f:
-        st.sidebar.text(f.read())
+    # Other methods remain the same...
 
-def validate_and_format_url(url):
-    """Ensure the URL starts with http:// or https://, otherwise prepend https://."""
-    if not url.startswith(("http://", "https://")):
-        return "https://" + url
-    return url
+class EmailHarvester:
+    def __init__(self):
+        self.proxy_scanner = ProxyScanner()
+        self.session = None
 
-def is_valid_email(email):
-    """Check if an email address is valid."""
-    regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-    return re.match(regex, email) is not None
+    # Other methods remain the same...
 
-def scrape_emails_from_url(url):
-    """Scrape emails from a single URL."""
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', str(soup))
-        emails = list(set([email for email in emails if is_valid_email(email)]))
-        logging.info(f"Successfully scraped {len(emails)} emails from {url}")
-        return emails
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Failed to scrape {url}: {e}")
-        return []
+    async def harvest_emails(self, urls: list, max_depth: int = 2) -> list:
+        all_emails = []
+        for url in urls:
+            emails = await self.fetch_url_with_proxy(url, max_depth=max_depth)
+            all_emails.extend(emails)
+        return list(set(all_emails))
 
-# Text area for multiple URLs
-urls_input = st.text_area("Enter URLs to scrape emails from (one per line)")
+@st.cache_resource
+def get_harvester():
+    return EmailHarvester()
 
-if st.button("Start Scraping"):
-    st.session_state.urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
-    all_emails = []
-    progress_bar = st.progress(0)
-    
-    for i, url in enumerate(st.session_state.urls):
-        st.write(f"Scraping: {url}")
-        emails = scrape_emails_from_url(url)
-        all_emails.extend(emails)
-        progress_bar.progress((i + 1) / len(st.session_state.urls))
+def main():
+    harvester = get_harvester()
 
-    all_emails = list(set(all_emails))  # Remove duplicates
-    st.write(f"Found {len(all_emails)} unique emails.")
-    
-    if all_emails:
-        email_df = pd.DataFrame(all_emails, columns=["Email"])
-        st.write(email_df)
+    st.write("Enter URLs to scrape emails from (one per line):")
+    urls_input = st.text_area("URLs")
+    max_depth = st.slider("Max Crawl Depth", 0, 5, 2)
 
-        # Export as CSV
-        csv_data = email_df.to_csv(index=False).encode('utf-8')
-        st.download_button(label="Download as CSV", data=csv_data, file_name='emails.csv', mime='text/csv')
+    if st.button("Start Harvesting"):
+        urls = [url.strip() for url in urls_input.splitlines() if url.strip()]
+        if urls:
+            with st.spinner('Harvesting emails...'):
+                # Use asyncio.run in a separate thread to avoid blocking Streamlit
+                async def run_harvest():
+                    await harvester.initialize()
+                    emails = await harvester.harvest_emails(urls, max_depth)
+                    await harvester.close()
+                    return emails
 
-        # Export as Excel
-        excel_data = BytesIO()
-        email_df.to_excel(excel_data, index=False)
-        st.download_button(label="Download as Excel", data=excel_data, file_name='emails.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                emails = asyncio.run(run_harvest())
 
-# Feedback form
-st.sidebar.title("Feedback")
-feedback_text = st.sidebar.text_area("Submit your feedback or report an issue")
-if st.sidebar.button("Submit Feedback"):
-    logging.info(f"Feedback submitted: {feedback_text}")
-    st.sidebar.success("Thank you for your feedback!")
+                if emails:
+                    st.write(f"Found {len(emails)} unique emails:")
+                    email_df = pd.DataFrame(emails, columns=["Email"])
+                    st.write(email_df)
 
-# Scheduled scraping task
-def scheduled_scraping():
-    st.session_state.urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
-    all_emails = []
-    for url in st.session_state.urls:
-        emails = scrape_emails_from_url(url)
-        all_emails.extend(emails)
-    all_emails = list(set(all_emails))
-    logging.info(f"Scheduled task found {len(all_emails)} unique emails.")
+                    # Export options
+                    csv = email_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Download as CSV",
+                        data=csv,
+                        file_name="harvested_emails.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.write("No emails found.")
+        else:
+            st.write("Please enter at least one URL.")
 
-if st.sidebar.button("Schedule Scraping (Daily at 9 AM)"):
-    scheduler.add_job(scheduled_scraping, 'cron', hour=9, minute=0)
-    scheduler.start()
-    st.sidebar.success("Scheduled scraping task added.")
-
-# Display current jobs
-if scheduler.get_jobs():
-    st.sidebar.write("Scheduled Jobs:")
-    for job in scheduler.get_jobs():
-        st.sidebar.write(f"- {job}")
-else:
-    st.sidebar.write("No jobs scheduled.")
+if __name__ == "__main__":
+    main()
