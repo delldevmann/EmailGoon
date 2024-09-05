@@ -15,7 +15,7 @@ st.set_page_config(page_title='Streamlit Cloud Email Harvester', page_icon='🌾
 st.title("🌾 Email Harvester")
 
 # Initialize logging
-logging.basicConfig(filename='scraper.log', level=logging.WARNING, format='%(asctime)s - %(message)s')  # Log only warnings and above
+logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')  # Log all info and above
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
@@ -46,7 +46,7 @@ def validate_and_format_url(url):
 
 def is_valid_email(email):
     """Check if an email address is valid."""
-    regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    regex = r'(?i)(?<!\w)([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z]{2,})(?!\w)'
     return re.match(regex, email) is not None
 
 def extract_emails(soup):
