@@ -116,7 +116,7 @@ class EmailHarvester:
             else:
                 if 'wired.com' in url:  # Use Playwright for JavaScript-heavy websites
                     return await self.fetch_url_with_playwright(url)
-                
+
                 async with self.session.get(url) as response:
                     if response.status != 200:
                         logging.error(f"Failed to fetch {url}: Status {response.status}")
@@ -173,7 +173,7 @@ def normalize_url(url):
     return url
 
 # Main Streamlit App Logic
-def main():
+async def main_async():
     # Toggle proxy usage
     use_proxies = st.sidebar.checkbox("Enable Proxy Usage", value=True)
 
@@ -215,13 +215,7 @@ def main():
 
         if urls:
             with st.spinner('Harvesting emails...'):
-                async def run_harvest():
-                    await harvester.initialize()
-                    emails = await harvester.harvest_emails(urls, max_depth)
-                    await harvester.close()
-                    return emails
-
-                emails = asyncio.run(run_harvest())
+                emails = await harvester.harvest_emails(urls, max_depth)
 
                 if emails:
                     st.write(f"Found {len(emails)} unique emails:")
@@ -241,6 +235,11 @@ def main():
                     st.write("No emails found.")
         else:
             st.write("Please enter at least one valid URL.")
+
+# Main function for Streamlit
+def main():
+    # Streamlit runs on a synchronous thread. We need to call asyncio event loop explicitly.
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
