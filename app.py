@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Streamlit page configuration
 st.set_page_config(page_title='Enhanced Email Harvester', page_icon='🌾', layout="wide")
-st.title("🌾 Streamit Cloud Email Harvester ")
+st.title("🌾 Streamlit Cloud Email Harvester")
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
