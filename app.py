@@ -181,7 +181,7 @@ async def main_async():
 
     # Schedule scraping task
     if st.sidebar.button("Schedule Scraping (Daily at 9 AM)"):
-        scheduler.add_job(scheduled_scraping, 'cron', hour=9, minute=0)
+        scheduler.add_job(await scheduled_scraping, 'cron', hour=9, minute=0)
         scheduler.start()
         st.sidebar.success("Scheduled scraping task added.")
 
@@ -228,7 +228,7 @@ async def main_async():
 
 # Main function for Streamlit
 def main():
-    # Directly use asyncio event loop provided by Streamlit
+    # Streamlit automatically runs its own event loop, no need for asyncio.run().
     asyncio.run(main_async())
 
 if __name__ == "__main__":
