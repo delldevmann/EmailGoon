@@ -15,7 +15,7 @@ st.set_page_config(page_title='Streamlit Cloud Email Harvester', page_icon='🌾
 st.title("🌾 Email Harvester")
 
 # Initialize logging
-logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+logging.basicConfig(filename='scraper.log', level=logging.WARNING, format='%(asctime)s - %(message)s')  # Log only warnings and above
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
@@ -115,7 +115,7 @@ if st.button("Start Scraping"):
     total_urls = len(st.session_state.urls)
     if total_urls > 0:
         with st.spinner('Harvesting emails...'):
-            all_emails = asyncio.run(scrape_emails_from_urls(st.session_state.urls, depth_input))
+            all_emails = await scrape_emails_from_urls(st.session_state.urls, depth_input)
 
             all_emails = list(set(all_emails))  # Remove duplicates
             st.write(f"Found {len(all_emails)} unique emails.")
