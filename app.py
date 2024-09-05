@@ -4,11 +4,11 @@ import aiohttp
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 import dns.resolver
 import logging
 import sqlite3
-import enum 
+import enum
 from tenacity import retry, stop_after_attempt, wait_exponential
 from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
@@ -20,8 +20,8 @@ logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctim
 logger = logging.getLogger(__name__)
 
 # Streamlit page configuration
-st.set_page_config(page_title='Enhanced Email Harvester', page_icon='🌾', layout="wide")
-st.title("🌾 Enhanced Email Harvester with Proxy and Scheduling Support")
+st.set_page_config(page_title='Enhanced Email Harvester', page_icon='⚒️', layout="wide")
+st.title("⚒️ Enhanced Email Harvester with Proxy and Scheduling Support")
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
@@ -81,18 +81,28 @@ class EmailHarvester:
         if self.session:
             await self.session.close()
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=5))
     async def fetch_url_with_proxy(self, url, max_depth):
-        if self.use_proxies:
-            proxies = self.proxy_scanner.fetch_proxies()
-            # Add proxy handling logic here
-            pass
-        else:
-            async with self.session.get(url) as response:
-                content = await response.text()
-                soup = BeautifulSoup(content, 'html.parser')
-                emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', str(soup))
-                return list(set(emails))
+        try:
+            if self.use_proxies:
+                proxies = self.proxy_scanner.fetch_proxies()
+                # Implement proxy handling logic here
+                pass
+            else:
+                async with self.session.get(url) as response:
+                    if response.status != 200:
+                        logging.error(f"Failed to fetch {url}: Status {response.status}")
+                        return []
+                    content = await response.text()
+                    soup = BeautifulSoup(content, 'html.parser')
+                    emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', str(soup))
+                    return list(set(emails))
+        except aiohttp.ClientError as e:
+            logging.error(f"Network or client error fetching {url}: {e}")
+            return []
+        except Exception as e:
+            logging.error(f"Unexpected error fetching {url}: {e}")
+            return []
 
     async def harvest_emails(self, urls: list, max_depth: int = 2) -> list:
         all_emails = []
@@ -116,6 +126,14 @@ async def run_scheduled_harvest(harvester):
     emails = await harvester.harvest_emails(urls)
     await harvester.close()
     logging.info(f"Scheduled scraping found {len(emails)} unique emails.")
+
+# Validate URL
+def is_valid_url(url):
+    try:
+        result = urlparse(url)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
 
 # Main Streamlit App Logic
 def main():
@@ -155,7 +173,7 @@ def main():
 
     # Start harvesting emails
     if st.button("Start Harvesting"):
-        urls = [url.strip() for url in urls_input.splitlines() if url.strip()]
+        urls = [url.strip() for url in urls_input.splitlines() if is_valid_url(url.strip())]
         if urls:
             with st.spinner('Harvesting emails...'):
                 async def run_harvest():
@@ -183,7 +201,7 @@ def main():
                 else:
                     st.write("No emails found.")
         else:
-            st.write("Please enter at least one URL.")
+            st.write("Please enter at least one valid URL.")
 
 if __name__ == "__main__":
     main()
