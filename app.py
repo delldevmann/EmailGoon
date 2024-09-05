@@ -1,4 +1,3 @@
-import subprocess
 import streamlit as st
 import asyncio
 import aiohttp
@@ -12,10 +11,6 @@ import enum
 from tenacity import retry, stop_after_attempt, wait_exponential
 from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
-from datetime import datetime
-from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
-import os
 
 # Configure logging
 logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -24,22 +19,6 @@ logger = logging.getLogger(__name__)
 # Streamlit page configuration
 st.set_page_config(page_title='Enhanced Email Harvester', page_icon='🌾', layout="wide")
 st.title("🌾 Streamlit Cloud Email Harvester")
-
-# Ensure Playwright browsers are installed
-def install_playwright_browsers():
-    try:
-        # Check if Playwright's Chromium browser is installed
-        if not os.path.exists("/home/appuser/.cache/ms-playwright/chromium-1071/chrome-linux/chrome"):
-            st.write("Installing Playwright browsers, please wait...")
-            subprocess.run(["playwright", "install"], check=True)
-            st.write("Playwright browsers installed successfully.")
-        else:
-            st.write("Playwright browsers are already installed.")
-    except Exception as e:
-        st.error(f"Error installing Playwright browsers: {e}")
-
-# Call the function to ensure browsers are installed
-install_playwright_browsers()
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
@@ -116,34 +95,27 @@ class EmailHarvester:
         if self.session:
             await self.session.close()
 
-    async def fetch_url_with_playwright(self, url):
-        """Use Playwright with stealth mode to scrape JavaScript-heavy websites."""
-        async with async_playwright() as p:
-            try:
-                browser = await p.chromium.launch(headless=True)
-                context = await browser.new_context()
-                
-                # Activate stealth mode
-                await stealth_async(context)
-
-                page = await context.new_page()
-                await page.goto(url)
-                await page.wait_for_load_state("networkidle")  # Wait for all network activity to stop
-                content = await page.content()
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=5))
+    async def fetch_url(self, url):
+        """Fetch URL content using aiohttp and extract emails."""
+        try:
+            async with self.session.get(url) as response:
+                if response.status != 200:
+                    logging.error(f"Failed to fetch {url}: Status {response.status}")
+                    return []
+                content = await response.text()
                 soup = BeautifulSoup(content, 'html.parser')
                 emails = self.extractor.extract_emails(str(soup))  # Extract emails using EmailExtractor
                 return list(emails)
-            except Exception as e:
-                logging.error(f"Error fetching page with Playwright: {e}")
-                return []
-            finally:
-                await browser.close()
+        except Exception as e:
+            logging.error(f"Error fetching {url}: {e}")
+            return []
 
     async def harvest_emails(self, urls: list, max_depth: int = 2) -> list:
         """Scrape emails from the given list of URLs."""
         all_emails = []
         for url in urls:
-            emails = await self.fetch_url_with_playwright(url)
+            emails = await self.fetch_url(url)
             all_emails.extend(emails)
         return list(set(all_emails))
 
