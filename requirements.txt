@@ -1,5 +1,6 @@
 altair==4.2.2
 apscheduler==3.10.1
+aiohttp==3.8.4
 attrs==23.1.0
 beautifulsoup4==4.12.2
 blinker==1.6.2
