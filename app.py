@@ -1,3 +1,4 @@
+import subprocess
 import streamlit as st
 import asyncio
 import aiohttp
@@ -14,6 +15,7 @@ from io import BytesIO
 from datetime import datetime
 from playwright.async_api import async_playwright
 from playwright_stealth import stealth_async
+import os
 
 # Configure logging
 logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -22,6 +24,22 @@ logger = logging.getLogger(__name__)
 # Streamlit page configuration
 st.set_page_config(page_title='Enhanced Email Harvester', page_icon='🌾', layout="wide")
 st.title("🌾 Streamlit Cloud Email Harvester")
+
+# Ensure Playwright browsers are installed
+def install_playwright_browsers():
+    try:
+        # Check if Playwright's Chromium browser is installed
+        if not os.path.exists("/home/appuser/.cache/ms-playwright/chromium-1071/chrome-linux/chrome"):
+            st.write("Installing Playwright browsers, please wait...")
+            subprocess.run(["playwright", "install"], check=True)
+            st.write("Playwright browsers installed successfully.")
+        else:
+            st.write("Playwright browsers are already installed.")
+    except Exception as e:
+        st.error(f"Error installing Playwright browsers: {e}")
+
+# Call the function to ensure browsers are installed
+install_playwright_browsers()
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
