@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 import dns.resolver
 import logging
 import sqlite3
+import enum 
 from tenacity import retry, stop_after_attempt, wait_exponential
 from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
@@ -19,8 +20,8 @@ logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctim
 logger = logging.getLogger(__name__)
 
 # Streamlit page configuration
-st.set_page_config(page_title='Enhanced Email Harvester', page_icon='⚒️', layout="wide")
-st.title("⚒️ Enhanced Email Harvester with Proxy and Scheduling Support")
+st.set_page_config(page_title='Enhanced Email Harvester', page_icon='🌾', layout="wide")
+st.title("🌾 Enhanced Email Harvester with Proxy and Scheduling Support")
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
