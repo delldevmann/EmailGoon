@@ -127,13 +127,22 @@ async def run_scheduled_harvest(harvester):
     await harvester.close()
     logging.info(f"Scheduled scraping found {len(emails)} unique emails.")
 
-# Validate URL
+# Validate and normalize URL
 def is_valid_url(url):
+    """Check if a URL is valid."""
     try:
         result = urlparse(url)
-        return all([result.scheme, result.netloc])
+        return all([result.netloc])  # Allow URLs even if they don't have a scheme
     except ValueError:
         return False
+
+def normalize_url(url):
+    """Ensure the URL starts with http:// or https://."""
+    parsed_url = urlparse(url)
+    if not parsed_url.scheme:
+        # Default to https:// if no scheme is provided
+        return 'https://' + url
+    return url
 
 # Main Streamlit App Logic
 def main():
@@ -173,7 +182,9 @@ def main():
 
     # Start harvesting emails
     if st.button("Start Harvesting"):
-        urls = [url.strip() for url in urls_input.splitlines() if is_valid_url(url.strip())]
+        # Normalize and validate the URLs
+        urls = [normalize_url(url.strip()) for url in urls_input.splitlines() if is_valid_url(normalize_url(url.strip()))]
+
         if urls:
             with st.spinner('Harvesting emails...'):
                 async def run_harvest():
