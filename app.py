@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 logging.getLogger('asyncio').setLevel(logging.WARNING)
 
 # Setting page configuration
-st.set_page_config(page_title='Enhanced Email Harvester', page_icon='⚒️', layout="wide", initial_sidebar_state="auto")
-st.title("⚒️ Enhanced Email Harvester with Proxy Support")
+st.set_page_config(page_title='Enhanced Email Harvester', page_icon='🌾', layout="wide", initial_sidebar_state="auto")
+st.title("🌾 Enhanced Email Harvester with Proxy Support")
 
 # Proxy sources and other constants remain the same...
 
