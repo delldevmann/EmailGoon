@@ -119,14 +119,14 @@ class EmailHarvester:
     async def fetch_url_with_playwright(self, url):
         """Use Playwright with stealth mode to scrape JavaScript-heavy websites."""
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
-            page = await context.new_page()
-
-            # Activate stealth mode
-            await stealth_async(page)
-
             try:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context()
+                
+                # Activate stealth mode
+                await stealth_async(context)
+
+                page = await context.new_page()
                 await page.goto(url)
                 await page.wait_for_load_state("networkidle")  # Wait for all network activity to stop
                 content = await page.content()
