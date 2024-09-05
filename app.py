@@ -6,6 +6,7 @@ import pandas as pd
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
+from urllib.parse import urljoin
 
 # Setting page configuration
 st.set_page_config(page_title='Streamlit Cloud Email Harvester', page_icon='🌾', initial_sidebar_state="auto")
@@ -38,37 +39,62 @@ def is_valid_email(email):
     regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     return re.match(regex, email) is not None
 
-def scrape_emails_from_url(url):
-    """Scrape emails from a single URL."""
+def extract_emails(soup):
+    """Extract emails from the BeautifulSoup object."""
+    emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', str(soup))
+    return list(set([email for email in emails if is_valid_email(email)]))
+
+def find_links(soup, base_url):
+    """Find all links on the page and return their absolute URLs."""
+    links = set()
+    for link in soup.find_all('a', href=True):
+        full_url = urljoin(base_url, link['href'])
+        links.add(full_url)
+    return links
+
+def scrape_emails_from_url(url, depth, visited):
+    """Scrape emails from a single URL and crawl deeper."""
+    if depth < 0 or url in visited:
+        return []
+
+    visited.add(url)
     try:
         response = requests.get(url)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
-        emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', str(soup))
-        emails = list(set([email for email in emails if is_valid_email(email)]))  # Remove duplicates and invalid emails
+        emails = extract_emails(soup)
         logging.info(f"Successfully scraped {len(emails)} emails from {url}")
+        
+        # Find links to crawl deeper
+        links = find_links(soup, url)
+        for link in links:
+            emails += scrape_emails_from_url(link, depth - 1, visited)  # Recursively scrape linked pages
+
         return emails
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to scrape {url}: {e}")
         return []
 
-# Text area for multiple URLs
+# Text area for multiple URLs and depth selection
 urls_input = st.text_area("Enter URLs to scrape emails from (one per line)")
+depth_input = st.number_input("Crawl Depth (0 for only the specified URLs)", min_value=0, value=1)
 
 if st.button("Start Scraping"):
     st.session_state.urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
     all_emails = []
+    visited_urls = set()  # Track visited URLs
     progress_bar = st.progress(0)
-    
+
+    total_urls = len(st.session_state.urls)
     for i, url in enumerate(st.session_state.urls):
         st.write(f"Scraping: {url}")
-        emails = scrape_emails_from_url(url)
+        emails = scrape_emails_from_url(url, depth_input, visited_urls)
         all_emails.extend(emails)
-        progress_bar.progress((i + 1) / len(st.session_state.urls))
+        progress_bar.progress((i + 1) / total_urls)
 
     all_emails = list(set(all_emails))  # Remove duplicates
     st.write(f"Found {len(all_emails)} unique emails.")
-    
+
     if all_emails:
         email_df = pd.DataFrame(all_emails, columns=["Email"])
         st.write(email_df)
@@ -92,12 +118,10 @@ if st.sidebar.button("Submit Feedback"):
 
 # Scheduled scraping task
 def scheduled_scraping():
-    st.session_state.urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
-    all_emails = []
+    visited = set()
     for url in st.session_state.urls:
-        emails = scrape_emails_from_url(url)
-        all_emails.extend(emails)
-    all_emails = list(set(all_emails))
+        emails = scrape_emails_from_url(url, depth_input, visited)
+    all_emails = list(set(emails))
     logging.info(f"Scheduled task found {len(all_emails)} unique emails.")
 
 if st.sidebar.button("Schedule Scraping (Daily at 9 AM)"):
