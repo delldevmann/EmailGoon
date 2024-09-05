@@ -134,9 +134,9 @@ def get_harvester(use_proxies):
     return EmailHarvester(use_proxies)
 
 # Scheduled scraping task
-def scheduled_scraping():
+async def scheduled_scraping():
     harvester = get_harvester(st.session_state.use_proxies)
-    asyncio.run(run_scheduled_harvest(harvester))
+    await run_scheduled_harvest(harvester)
 
 async def run_scheduled_harvest(harvester):
     await harvester.initialize()
@@ -228,7 +228,7 @@ async def main_async():
 
 # Main function for Streamlit
 def main():
-    # Streamlit runs on a synchronous thread. We need to call asyncio event loop explicitly.
+    # Directly use asyncio event loop provided by Streamlit
     asyncio.run(main_async())
 
 if __name__ == "__main__":
