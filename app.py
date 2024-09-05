@@ -64,7 +64,7 @@ class ProxyScanner:
 # EmailExtractor Class
 class EmailExtractor:
     def __init__(self):
-        # Updated regex for better email extraction
+        # Regex for email extraction
         self.regexp = re.compile(
             r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
         )
@@ -98,8 +98,10 @@ class EmailHarvester:
                     logging.error(f"Failed to fetch {url}: Status {response.status}")
                     return []
                 content = await response.text()
+                logging.info(f"Fetched content length: {len(content)} characters")
                 soup = BeautifulSoup(content, 'html.parser')
-                emails = self.extractor.extract_emails(str(soup))  # Extract emails using EmailExtractor
+                emails = self.extractor.extract_emails(content)  # Use content directly
+                logging.info(f"Extracted {len(emails)} emails from {url}")
                 return list(emails)
         except Exception as e:
             logging.error(f"Error fetching {url}: {e}")
