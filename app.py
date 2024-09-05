@@ -1,5 +1,4 @@
-import asyncio
-import aiohttp
+import requests
 from bs4 import BeautifulSoup
 import streamlit as st
 import re
@@ -7,8 +6,10 @@ import pandas as pd
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
+from urllib.parse import urljoin
+import asyncio
+import aiohttp
 import random
-import time
 
 # Setting page configuration
 st.set_page_config(page_title='Streamlit Cloud Email Harvester', page_icon='🌾', initial_sidebar_state="auto")
@@ -54,6 +55,14 @@ def extract_emails(soup):
     emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', str(soup))
     return list(set(email for email in emails if is_valid_email(email)))
 
+def find_links(soup, base_url):
+    """Find all links on the page and return their absolute URLs."""
+    links = set()
+    for link in soup.find_all('a', href=True):
+        full_url = urljoin(base_url, link['href'])
+        links.add(full_url)
+    return links
+
 async def fetch_url(session, url):
     """Fetch a single URL and extract emails."""
     headers = {'User-Agent': random.choice(USER_AGENTS)}  # Random User-Agent
@@ -62,23 +71,45 @@ async def fetch_url(session, url):
             if response.status == 200:
                 content = await response.text()
                 soup = BeautifulSoup(content, 'html.parser')
-                return extract_emails(soup)
+                return extract_emails(soup), find_links(soup, url)
             else:
                 logging.error(f"Failed to fetch {url}: Status {response.status}")
-                return []
+                return [], []
     except Exception as e:
         logging.error(f"Error fetching {url}: {e}")
+        return [], []
+
+async def scrape_emails_from_url(session, url, depth, visited):
+    """Scrape emails from a URL and crawl deeper."""
+    if depth < 0 or url in visited:
         return []
 
-async def scrape_emails_from_urls(urls):
+    visited.add(url)
+    emails = []
+    new_links = []
+
+    extracted_emails, found_links = await fetch_url(session, url)
+    emails.extend(extracted_emails)
+    new_links.extend(found_links)
+
+    # Recursively scrape found links
+    for link in new_links:
+        if link not in visited:
+            emails.extend(await scrape_emails_from_url(session, link, depth - 1, visited))
+
+    return emails
+
+async def scrape_emails_from_urls(urls, depth):
     """Scrape emails from multiple URLs concurrently."""
+    visited = set()
     async with aiohttp.ClientSession() as session:
-        tasks = [fetch_url(session, url) for url in urls]
+        tasks = [scrape_emails_from_url(session, url, depth, visited) for url in urls]
         results = await asyncio.gather(*tasks)
         return [email for sublist in results for email in sublist]  # Flatten the list of lists
 
 # Text area for multiple URLs and depth selection
 urls_input = st.text_area("Enter URLs to scrape emails from (one per line)")
+depth_input = st.number_input("Crawl Depth (0 for only the specified URLs)", min_value=0, value=1)
 
 if st.button("Start Scraping"):
     st.session_state.urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
@@ -88,7 +119,7 @@ if st.button("Start Scraping"):
     total_urls = len(st.session_state.urls)
     if total_urls > 0:
         with st.spinner('Harvesting emails...'):
-            all_emails = asyncio.run(scrape_emails_from_urls(st.session_state.urls))
+            all_emails = asyncio.run(scrape_emails_from_urls(st.session_state.urls, depth_input))
 
             all_emails = list(set(all_emails))  # Remove duplicates
             st.write(f"Found {len(all_emails)} unique emails.")
@@ -118,8 +149,8 @@ if st.sidebar.button("Submit Feedback"):
 
 # Scheduled scraping task
 def scheduled_scraping():
-    urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
-    all_emails = asyncio.run(scrape_emails_from_urls(urls))
+    visited = set()
+    all_emails = asyncio.run(scrape_emails_from_urls(st.session_state.urls, depth_input))
     all_emails = list(set(all_emails))
     logging.info(f"Scheduled task found {len(all_emails)} unique emails.")
 
