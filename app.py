@@ -73,7 +73,7 @@ async def fetch_url(session, url):
                 soup = BeautifulSoup(content, 'html.parser')
                 return extract_emails(soup), find_links(soup, url)
             else:
-                logging.error(f"Failed to fetch {url}: Status {response.status}")
+                logging.warning(f"Failed to fetch {url}: Status {response.status}")
                 return [], []
     except Exception as e:
         logging.error(f"Error fetching {url}: {e}")
@@ -86,14 +86,11 @@ async def scrape_emails_from_url(session, url, depth, visited):
 
     visited.add(url)
     emails = []
-    new_links = []
-
     extracted_emails, found_links = await fetch_url(session, url)
     emails.extend(extracted_emails)
-    new_links.extend(found_links)
 
     # Recursively scrape found links
-    for link in new_links:
+    for link in found_links:
         if link not in visited:
             emails.extend(await scrape_emails_from_url(session, link, depth - 1, visited))
 
