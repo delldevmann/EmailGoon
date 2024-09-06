@@ -5,7 +5,6 @@ import streamlit as st
 import re
 import pandas as pd
 import logging
-from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
 from urllib.parse import urljoin
 import random
@@ -16,9 +15,6 @@ st.title("🌾 Email Harvester")
 
 # Initialize logging
 logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')  # Log all info and above
-
-# Initialize scheduler
-scheduler = BackgroundScheduler()
 
 # Initialize session state for batch processing
 if 'urls' not in st.session_state:
@@ -87,29 +83,30 @@ async def fetch_url(session, url, semaphore):
         logging.error(f"Error fetching {url}: {e}")
         return [], []
 
-async def scrape_emails_from_url(session, url, depth, visited, semaphore):
+async def scrape_emails_from_url(session, url, depth, visited, semaphore, status_placeholder):
     """Scrape emails from a URL and crawl deeper."""
     if depth < 0 or url in visited:
         return []
 
     visited.add(url)
     emails = []
+    status_placeholder.text(f"Scraping {url}...")
     extracted_emails, found_links = await fetch_url(session, url, semaphore)
     emails.extend(extracted_emails)
 
     # Recursively scrape found links
     for link in found_links:
         if link not in visited:
-            emails.extend(await scrape_emails_from_url(session, link, depth - 1, visited, semaphore))
+            emails.extend(await scrape_emails_from_url(session, link, depth - 1, visited, semaphore, status_placeholder))
 
     return emails
 
-async def scrape_emails_from_urls(urls, depth):
+async def scrape_emails_from_urls(urls, depth, status_placeholder):
     """Scrape emails from multiple URLs concurrently."""
     visited = set()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession() as session:
-        tasks = [scrape_emails_from_url(session, url, depth, visited, semaphore) for url in urls]
+        tasks = [scrape_emails_from_url(session, url, depth, visited, semaphore, status_placeholder) for url in urls]
         results = await asyncio.gather(*tasks)
         return [email for sublist in results for email in sublist]  # Flatten the list of lists
 
@@ -122,18 +119,19 @@ async def main_async():
     if st.button("Start Scraping"):
         st.session_state.urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
         all_emails = []
+        status_placeholder = st.empty()  # Placeholder for dynamic status updates
         progress_bar = st.progress(0)
 
         total_urls = len(st.session_state.urls)
         if total_urls > 0:
             with st.spinner('Harvesting emails...'):
                 for i, url in enumerate(st.session_state.urls):
-                    emails = await scrape_emails_from_urls([url], depth_input)
+                    emails = await scrape_emails_from_urls([url], depth_input, status_placeholder)
                     all_emails.extend(emails)
                     progress_bar.progress((i + 1) / total_urls)
 
                 all_emails = list(set(all_emails))  # Remove duplicates
-                st.write(f"Found {len(all_emails)} unique emails.")
+                status_placeholder.text(f"Finished scraping. Found {len(all_emails)} unique emails.")
 
                 if all_emails:
                     email_df = pd.DataFrame(all_emails, columns=["Email"])
