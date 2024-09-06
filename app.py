@@ -9,7 +9,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
 from urllib.parse import urljoin
 import random
-from collections import defaultdict
 
 # Setting page configuration
 st.set_page_config(page_title='Streamlit Cloud Email Harvester', page_icon='🌾', initial_sidebar_state="auto")
@@ -59,11 +58,13 @@ def extract_emails(soup):
     return list(set(email for email in emails if is_valid_email(email)))
 
 def find_links(soup, base_url):
-    """Find all links on the page and return their absolute URLs."""
+    """Find all links on the page and return their absolute URLs within the same domain."""
+    base_domain = re.match(r"https?://(www\.)?([^/]+)", base_url).group(2)
     links = set()
     for link in soup.find_all('a', href=True):
         full_url = urljoin(base_url, link['href'])
-        links.add(full_url)
+        if base_domain in full_url:  # Ensure we're staying within the same domain
+            links.add(full_url)
     return links
 
 async def fetch_url(session, url, semaphore):
@@ -71,7 +72,7 @@ async def fetch_url(session, url, semaphore):
     headers = {'User-Agent': random.choice(USER_AGENTS)}  # Random User-Agent
     try:
         async with semaphore:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url, headers=headers, timeout=10) as response:
                 if response.status == 200:
                     content = await response.text()
                     soup = BeautifulSoup(content, 'html.parser')
@@ -79,6 +80,9 @@ async def fetch_url(session, url, semaphore):
                 else:
                     logging.warning(f"Failed to fetch {url}: Status {response.status}")
                     return [], []
+    except asyncio.TimeoutError:
+        logging.error(f"Timeout fetching {url}")
+        return [], []
     except Exception as e:
         logging.error(f"Error fetching {url}: {e}")
         return [], []
@@ -123,7 +127,10 @@ async def main_async():
         total_urls = len(st.session_state.urls)
         if total_urls > 0:
             with st.spinner('Harvesting emails...'):
-                all_emails = await scrape_emails_from_urls(st.session_state.urls, depth_input)
+                for i, url in enumerate(st.session_state.urls):
+                    emails = await scrape_emails_from_urls([url], depth_input)
+                    all_emails.extend(emails)
+                    progress_bar.progress((i + 1) / total_urls)
 
                 all_emails = list(set(all_emails))  # Remove duplicates
                 st.write(f"Found {len(all_emails)} unique emails.")
