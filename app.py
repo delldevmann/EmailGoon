@@ -15,7 +15,7 @@ st.set_page_config(page_title='Streamlit Cloud Email Harvester', page_icon='🌾
 st.title("🌾 Email Harvester")
 
 # Initialize logging
-logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')  # Log all info and above
+logging.basicConfig(filename='scraper.log', level=logging.ERROR, format='%(asctime)s - %(message)s')  # Log errors only
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
@@ -72,7 +72,7 @@ async def fetch_url(session, url):
                 soup = BeautifulSoup(content, 'html.parser')
                 return extract_emails(soup), find_links(soup, url)
             else:
-                logging.warning(f"Failed to fetch {url}: Status {response.status}")
+                logging.error(f"Failed to fetch {url}: Status {response.status}")
                 return [], []
     except Exception as e:
         logging.error(f"Error fetching {url}: {e}")
