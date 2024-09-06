@@ -9,13 +9,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
 from urllib.parse import urljoin
 import random
+from collections import defaultdict
 
 # Setting page configuration
 st.set_page_config(page_title='Streamlit Cloud Email Harvester', page_icon='🌾', initial_sidebar_state="auto")
 st.title("🌾 Email Harvester")
 
 # Initialize logging
-logging.basicConfig(filename='scraper.log', level=logging.ERROR, format='%(asctime)s - %(message)s')  # Log errors only
+logging.basicConfig(filename='scraper.log', level=logging.INFO, format='%(asctime)s - %(message)s')  # Log all info and above
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
@@ -37,6 +38,9 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
     "Mozilla/5.0 (Linux; Android 10; Pixel 3 XL Build/QQ1A.200205.002) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.106 Mobile Safari/537.36"
 ]
+
+# Limiting concurrent requests to avoid overloading
+MAX_CONCURRENT_REQUESTS = 10
 
 def validate_and_format_url(url):
     """Ensure the URL starts with http:// or https://, otherwise prepend https://."""
@@ -62,44 +66,46 @@ def find_links(soup, base_url):
         links.add(full_url)
     return links
 
-async def fetch_url(session, url):
+async def fetch_url(session, url, semaphore):
     """Fetch a single URL and extract emails."""
     headers = {'User-Agent': random.choice(USER_AGENTS)}  # Random User-Agent
     try:
-        async with session.get(url, headers=headers) as response:
-            if response.status == 200:
-                content = await response.text()
-                soup = BeautifulSoup(content, 'html.parser')
-                return extract_emails(soup), find_links(soup, url)
-            else:
-                logging.error(f"Failed to fetch {url}: Status {response.status}")
-                return [], []
+        async with semaphore:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    content = await response.text()
+                    soup = BeautifulSoup(content, 'html.parser')
+                    return extract_emails(soup), find_links(soup, url)
+                else:
+                    logging.warning(f"Failed to fetch {url}: Status {response.status}")
+                    return [], []
     except Exception as e:
         logging.error(f"Error fetching {url}: {e}")
         return [], []
 
-async def scrape_emails_from_url(session, url, depth, visited):
+async def scrape_emails_from_url(session, url, depth, visited, semaphore):
     """Scrape emails from a URL and crawl deeper."""
     if depth < 0 or url in visited:
         return []
 
     visited.add(url)
     emails = []
-    extracted_emails, found_links = await fetch_url(session, url)
+    extracted_emails, found_links = await fetch_url(session, url, semaphore)
     emails.extend(extracted_emails)
 
     # Recursively scrape found links
     for link in found_links:
         if link not in visited:
-            emails.extend(await scrape_emails_from_url(session, link, depth - 1, visited))
+            emails.extend(await scrape_emails_from_url(session, link, depth - 1, visited, semaphore))
 
     return emails
 
 async def scrape_emails_from_urls(urls, depth):
     """Scrape emails from multiple URLs concurrently."""
     visited = set()
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     async with aiohttp.ClientSession() as session:
-        tasks = [scrape_emails_from_url(session, url, depth, visited) for url in urls]
+        tasks = [scrape_emails_from_url(session, url, depth, visited, semaphore) for url in urls]
         results = await asyncio.gather(*tasks)
         return [email for sublist in results for email in sublist]  # Flatten the list of lists
 
