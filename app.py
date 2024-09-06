@@ -8,12 +8,20 @@ import pandas as pd
 st.set_page_config(page_title='Email Scraper', page_icon='🌾', initial_sidebar_state="auto")
 st.title("🌾 Email Scraper")
 
+def validate_and_format_url(url):
+    """Ensure the URL starts with http:// or https://, otherwise prepend https://."""
+    if not url.startswith(("http://", "https://")):
+        return "https://" + url
+    return url
+
 # Input for the URL
 url = st.text_input("Enter URL to scrape emails from", "https://stan.store/brydon")
 
 # Button to start scraping
 if st.button("Start Scraping"):
-    if url.strip():  # Ensuring the URL is not empty
+    if url.strip():  # Ensure the URL is not empty
+        url = validate_and_format_url(url.strip())  # Validate and format URL
+        
         try:
             # Show progress spinner while scraping
             with st.spinner("Scraping emails..."):
