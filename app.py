@@ -5,8 +5,8 @@ import re
 import pandas as pd
 
 # Set up page configuration
-st.set_page_config(page_title='Email Scraper', page_icon='⚒️', initial_sidebar_state="auto")
-st.title("⚒️ Email Scraper")
+st.set_page_config(page_title='Email Scraper', page_icon='🌾', initial_sidebar_state="auto")
+st.title("🌾 Email Scraper")
 
 # Input for the URL
 url = st.text_input("Enter URL to scrape emails from", "https://stan.store/brydon")
