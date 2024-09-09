@@ -75,7 +75,7 @@ async def main_scraper(url, depth):
         return await scrape_emails_recursive(session, url, depth, visited)
 
 # Input for the URL and crawl depth
-url = st.text_input("Enter URL to scrape emails from", "https://stan.store/brydon")
+url = st.text_input("Enter URL to scrape emails from", "https://www.bbc.com")
 depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
 
 # Button to start scraping
