@@ -5,6 +5,7 @@ from typing import List, Set
 
 import aiohttp
 from bs4 import BeautifulSoup
+import chardet  # To detect encoding
 import streamlit as st
 import pandas as pd
 
@@ -14,9 +15,23 @@ class EmailHarvester:
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
 
     async def fetch_url(self, session: aiohttp.ClientSession, url: str) -> str:
-        """Fetch a URL's content asynchronously."""
-        async with session.get(url) as response:
-            return await response.text()
+        """Fetch a URL's content asynchronously with proper encoding handling."""
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+        try:
+            async with session.get(url, headers=headers) as response:
+                # Read the raw bytes of the response
+                raw_content = await response.content.read()
+
+                # Detect the encoding using chardet
+                detected_encoding = chardet.detect(raw_content)['encoding']
+                if detected_encoding is None:
+                    detected_encoding = 'utf-8'  # Fallback to utf-8 if detection fails
+
+                # Decode using the detected encoding
+                return raw_content.decode(detected_encoding, errors='replace')
+        except aiohttp.ClientError as e:
+            st.warning(f"Error fetching {url}: {e}")
+            return ""
 
     def extract_emails(self, html_content: str) -> Set[str]:
         """Extract emails using regex from HTML content."""
@@ -77,8 +92,8 @@ async def main_async(urls: List[str], max_depth: int):
     return emails
 
 # Streamlit app
-st.set_page_config(page_title='Email Harvester', page_icon='🌾🚜', initial_sidebar_state="auto")
-st.title("🌾🚜 Streamlit Cloud: Email Harvester")
+st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
+st.title("📧 Recursive Email Harvester")
 
 # Input URL
 urls_input = st.text_area("Enter URLs to scrape emails from (one per line)")
