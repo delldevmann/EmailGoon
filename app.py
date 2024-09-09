@@ -1,95 +1,114 @@
 import asyncio
-import re
-from urllib.parse import urljoin, urlparse
-from typing import List, Set
 import aiohttp
-from aiohttp import ClientSession, ClientError, ClientTimeout
 from bs4 import BeautifulSoup
+import streamlit as st
+import re
+import pandas as pd
+from urllib.parse import urljoin
 
-class EmailHarvester:
-    def __init__(self, max_concurrent_requests: int = 10):
-        # Set to track visited URLs and avoid scraping the same page multiple times
-        self.visited_urls: Set[str] = set()
-        # Regex pattern to find email addresses
-        self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', re.IGNORECASE)
-        # Semaphore to control the number of concurrent requests
-        self.semaphore = asyncio.Semaphore(max_concurrent_requests)
+# Set up page configuration
+st.set_page_config(page_title='Recursive Email Scraper', page_icon='🌾', initial_sidebar_state="auto")
+st.title("🌾 Streamlit Cloud: Email Harvester")
 
-    async def fetch_url(self, session: ClientSession, url: str) -> str:
-        """Fetch HTML content of a URL asynchronously."""
-        try:
-            # Using semaphore to limit concurrent requests
-            async with self.semaphore:
-                async with session.get(url, timeout=ClientTimeout(total=10)) as response:
-                    response.raise_for_status()  # Raise exception for bad status codes
-                    return await response.text()
-        except ClientError as e:
-            print(f"Error fetching {url}: {e}")
-            return ""
+def validate_and_format_url(url):
+    """Ensure the URL starts with http:// or https://, otherwise prepend https://."""
+    if not url.startswith(("http://", "https://")):
+        return "https://" + url
+    return url
 
-    def extract_emails(self, html_content: str) -> Set[str]:
-        """Extract email addresses from the HTML content using regex."""
-        return set(self.email_pattern.findall(html_content))
+def extract_emails(soup):
+    """Extract email addresses from the HTML content using regex."""
+    email_regex = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    emails = re.findall(email_regex, str(soup))
+    return set(emails)  # Return a set to avoid duplicates
 
-    def extract_links(self, html_content: str, base_url: str) -> Set[str]:
-        """Extract all the valid links from the HTML content and make them absolute."""
-        soup = BeautifulSoup(html_content, 'html.parser')
-        links = set()
-        for a_tag in soup.find_all('a', href=True):
-            href = a_tag['href']
-            full_url = urljoin(base_url, href)
-            # Only return links within the same domain
-            if urlparse(full_url).netloc == urlparse(base_url).netloc:
-                links.add(full_url)
-        return links
+def find_links(soup, base_url):
+    """Extract and return absolute links from the page."""
+    links = set()
+    for a_tag in soup.find_all("a", href=True):
+        url = urljoin(base_url, a_tag['href'])
+        if url.startswith(('http://', 'https://')):
+            links.add(url)
+    return links
 
-    async def crawl(self, url: str, max_depth: int = 2) -> Set[str]:
-        """Recursively scrape emails from a URL and its linked pages up to a certain depth."""
-        if max_depth < 0 or url in self.visited_urls:
-            return set()
+async def fetch_page(session, url):
+    """Fetch the content of the page asynchronously."""
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+    try:
+        async with session.get(url, headers=headers, timeout=10) as response:
+            response.raise_for_status()  # Raise error for bad status codes
+            return await response.text()
+    except aiohttp.ClientError as e:
+        st.warning(f"Error fetching {url}: {e}")
+        return ""
 
-        self.visited_urls.add(url)
-        emails = set()
+async def scrape_emails_recursive(session, url, depth, visited):
+    """Recursively scrape emails from a URL and its linked pages up to a certain depth."""
+    if depth < 0 or url in visited:
+        return set()  # Return an empty set if depth is 0 or URL is already visited
 
-        # Start a client session
-        async with ClientSession() as session:
-            # Fetch the page content
-            html_content = await self.fetch_url(session, url)
-            if html_content:
-                # Extract emails from the current page
-                emails.update(self.extract_emails(html_content))
+    visited.add(url)  # Mark URL as visited
+    emails = set()  # To store all the found emails
 
-                # If the depth allows, extract links and recursively crawl them
-                if max_depth > 0:
-                    links = self.extract_links(html_content, url)
-                    tasks = [self.crawl(link, max_depth - 1) for link in links]
-                    results = await asyncio.gather(*tasks)
-                    for result in results:
-                        emails.update(result)
+    try:
+        page_content = await fetch_page(session, url)
+        if page_content:
+            soup = BeautifulSoup(page_content, 'html.parser')
 
-        return emails
+            # Extract emails from the current page
+            emails.update(extract_emails(soup))
 
-    async def harvest_emails(self, urls: List[str], max_depth: int = 2) -> Set[str]:
-        """Start the email harvesting process by crawling multiple URLs."""
-        tasks = [self.crawl(url, max_depth) for url in urls]
-        results = await asyncio.gather(*tasks)
-        return set.union(*results)
-
-# Main function to start the email harvester
-async def main():
-    harvester = EmailHarvester(max_concurrent_requests=10)  # Adjust the concurrency limit if needed
-    urls = [
-        "https://example.com",
-        "https://example.org"
-    ]
-    # Start harvesting emails from the given URLs
-    emails = await harvester.harvest_emails(urls, max_depth=2)
+            # Recursively scrape links found on the current page
+            links = find_links(soup, url)
+            tasks = [scrape_emails_recursive(session, link, depth - 1, visited) for link in links]
+            results = await asyncio.gather(*tasks)
+            for result in results:
+                emails.update(result)
+    except Exception as e:
+        st.error(f"Error fetching the URL: {url}. {e}")
     
-    # Output the results
-    print(f"Found {len(emails)} unique emails:")
-    for email in sorted(emails):
-        print(email)
+    return emails
 
-# Run the asynchronous main function
-if __name__ == "__main__":
-    asyncio.run(main())
+async def main_scraper(url, depth):
+    visited = set()
+    async with aiohttp.ClientSession() as session:
+        return await scrape_emails_recursive(session, url, depth, visited)
+
+# Input for the URL and crawl depth
+url = st.text_input("Enter URL to scrape emails from", "https://stan.store/brydon")
+depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
+
+# Button to start scraping
+if st.button("Start Scraping"):
+    if url.strip():  # Ensure the URL is not empty
+        url = validate_and_format_url(url.strip())  # Validate and format URL
+        
+        try:
+            # Show progress spinner while scraping
+            with st.spinner("Scraping emails..."):
+                all_emails = asyncio.run(main_scraper(url, depth))
+                
+                if all_emails:
+                    st.success(f"Found {len(all_emails)} unique email(s):")
+                    st.write(list(all_emails))
+                    
+                    # Convert email set to DataFrame for CSV download
+                    email_df = pd.DataFrame(list(all_emails), columns=["Email"])
+                    
+                    # Download button for CSV
+                    csv = email_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Download as CSV",
+                        data=csv,
+                        file_name='emails.csv',
+                        mime='text/csv'
+                    )
+                else:
+                    st.info("No emails found on the page.")
+        except Exception as e:
+            st.error(f"Error occurred: {e}")
+    else:
+        st.warning("Please enter a valid URL.")
+
+# Disclaimer
+st.warning("⚠️ Warning: Note that not all websites may contain email addresses or allow email harvesting. Harvesting email addresses without permission may be a violation of the website's terms of service or applicable laws. Be sure to read and understand the website's terms of service and any applicable laws or regulations before scraping any website.")
