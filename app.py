@@ -8,7 +8,7 @@ from urllib.parse import urljoin
 
 # Set up page configuration
 st.set_page_config(page_title='Recursive Email Scraper', page_icon='🌾', initial_sidebar_state="auto")
-st.title("🌾 Streamlit Cloud: Email Harvester")
+st.title("🌾 Recursive Email Scraper")
 
 def validate_and_format_url(url):
     """Ensure the URL starts with http:// or https://, otherwise prepend https://."""
