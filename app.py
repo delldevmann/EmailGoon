@@ -5,33 +5,17 @@ from typing import List, Set
 import aiohttp
 from aiohttp import ClientSession, ClientError, ClientTimeout
 from bs4 import BeautifulSoup
-from faker import Faker
-import random
 
 class EmailHarvester:
     def __init__(self, max_concurrent_requests: int = 10):
         self.visited_urls: Set[str] = set()
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', re.IGNORECASE)
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)  # Limit concurrency
-        self.fake = Faker()  # Initialize Faker for generating random User-Agents, referrers, and more
-
-    def generate_headers(self) -> dict:
-        """Generate random headers using the Faker library."""
-        top_domains = ['.com', '.org', '.net', '.edu', '.gov']  # Common top-level domains for referrers
-        referrer_domain = self.fake.domain_name() + random.choice(top_domains)  # Random domain for referrer
-        referrer_path = f"/{self.fake.word()}/{self.fake.word()}"  # Create a fake path for the referrer
-
-        return {
-            'User-Agent': self.fake.user_agent(),  # Random User-Agent
-            'Accept-Language': self.fake.language_code(),  # Random language code
-            'Referer': f'https://{referrer_domain}{referrer_path}'  # Construct a fake referrer URL
-        }
 
     async def fetch_url(self, session: ClientSession, url: str) -> str:
         try:
             async with self.semaphore:  # Limit concurrent requests
-                headers = self.generate_headers()  # Generate random headers
-                async with session.get(url, headers=headers, timeout=ClientTimeout(total=10)) as response:
+                async with session.get(url, timeout=ClientTimeout(total=10)) as response:
                     return await response.text()
         except ClientError as e:
             print(f"Error fetching {url}: {e}")
