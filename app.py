@@ -5,6 +5,8 @@ from typing import List, Set
 
 import aiohttp
 from bs4 import BeautifulSoup
+import streamlit as st
+import pandas as pd
 
 class EmailHarvester:
     def __init__(self):
@@ -12,13 +14,16 @@ class EmailHarvester:
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
 
     async def fetch_url(self, session: aiohttp.ClientSession, url: str) -> str:
+        """Fetch a URL's content asynchronously."""
         async with session.get(url) as response:
             return await response.text()
 
     def extract_emails(self, html_content: str) -> Set[str]:
+        """Extract emails using regex from HTML content."""
         return set(self.email_pattern.findall(html_content))
 
     def extract_links(self, html_content: str, base_url: str) -> Set[str]:
+        """Extract links from the HTML content and return absolute URLs."""
         soup = BeautifulSoup(html_content, 'html.parser')
         links = set()
         for a_tag in soup.find_all('a', href=True):
@@ -29,6 +34,7 @@ class EmailHarvester:
         return links
 
     async def crawl(self, url: str, max_depth: int = 2) -> Set[str]:
+        """Crawl a URL recursively up to a max depth."""
         if max_depth < 0 or url in self.visited_urls:
             return set()
 
@@ -47,25 +53,63 @@ class EmailHarvester:
                     for result in results:
                         emails.update(result)
             except aiohttp.ClientError:
-                print(f"Error fetching {url}")
+                st.warning(f"Error fetching {url}")
 
         return emails
 
     async def harvest_emails(self, urls: List[str], max_depth: int = 2) -> Set[str]:
+        """Harvest emails from multiple URLs concurrently."""
         tasks = [self.crawl(url, max_depth) for url in urls]
         results = await asyncio.gather(*tasks)
         return set.union(*results)
 
-async def main():
+async def main_async(urls: List[str], max_depth: int):
+    """Main async function to start the email harvester."""
     harvester = EmailHarvester()
-    urls = [
-        "https://example.com",
-        "https://example.org"
-    ]
-    emails = await harvester.harvest_emails(urls, max_depth=2)
-    print(f"Found {len(emails)} unique emails:")
-    for email in sorted(emails):
-        print(email)
+    emails = await harvester.harvest_emails(urls, max_depth)
+    return emails
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# Streamlit app
+st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
+st.title("📧 Recursive Email Harvester")
+
+# Input URL
+urls_input = st.text_area("Enter URLs to scrape emails from (one per line)")
+depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
+
+# Convert the input into a list of URLs
+urls = [url.strip() for url in urls_input.splitlines() if url.strip()]
+
+# Button to start scraping
+if st.button("Start Scraping"):
+    if urls:
+        try:
+            # Show progress spinner while scraping
+            with st.spinner("Scraping emails..."):
+                # Run the asynchronous scraping function
+                all_emails = asyncio.run(main_async(urls, depth))
+                
+                if all_emails:
+                    st.success(f"Found {len(all_emails)} unique email(s):")
+                    st.write(list(all_emails))
+                    
+                    # Convert email set to DataFrame for CSV download
+                    email_df = pd.DataFrame(list(all_emails), columns=["Email"])
+                    
+                    # Download button for CSV
+                    csv = email_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Download as CSV",
+                        data=csv,
+                        file_name='emails.csv',
+                        mime='text/csv'
+                    )
+                else:
+                    st.info("No emails found on the pages.")
+        except Exception as e:
+            st.error(f"Error occurred: {e}")
+    else:
+        st.warning("Please enter at least one valid URL.")
+
+# Disclaimer
+st.warning("⚠️ Warning: Some websites may restrict scraping. Ensure you have permission to scrape data and comply with local regulations.")
