@@ -1,114 +1,91 @@
 import asyncio
-import aiohttp
-from bs4 import BeautifulSoup
-import streamlit as st
 import re
-import pandas as pd
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+from typing import List, Set
+import aiohttp
+from aiohttp import ClientSession, ClientError, ClientTimeout
+from bs4 import BeautifulSoup
+from faker import Faker
+import random
 
-# Set up page configuration
-st.set_page_config(page_title='Streamlit Cloud: Email Harvester', page_icon='🌾🚜', initial_sidebar_state="auto")
-st.title("🌾 Streamlit Cloud: Email Harvester")
+class EmailHarvester:
+    def __init__(self, max_concurrent_requests: int = 10):
+        self.visited_urls: Set[str] = set()
+        self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', re.IGNORECASE)
+        self.semaphore = asyncio.Semaphore(max_concurrent_requests)  # Limit concurrency
+        self.fake = Faker()  # Initialize Faker for generating random User-Agents, referrers, and more
 
-def validate_and_format_url(url):
-    """Ensure the URL starts with http:// or https://, otherwise prepend https://."""
-    if not url.startswith(("http://", "https://")):
-        return "https://" + url
-    return url
+    def generate_headers(self) -> dict:
+        """Generate random headers using the Faker library."""
+        top_domains = ['.com', '.org', '.net', '.edu', '.gov']  # Common top-level domains for referrers
+        referrer_domain = self.fake.domain_name() + random.choice(top_domains)  # Random domain for referrer
+        referrer_path = f"/{self.fake.word()}/{self.fake.word()}"  # Create a fake path for the referrer
 
-def extract_emails(soup):
-    """Extract email addresses from the HTML content using regex."""
-    email_regex = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-    emails = re.findall(email_regex, str(soup))
-    return set(emails)  # Return a set to avoid duplicates
+        return {
+            'User-Agent': self.fake.user_agent(),  # Random User-Agent
+            'Accept-Language': self.fake.language_code(),  # Random language code
+            'Referer': f'https://{referrer_domain}{referrer_path}'  # Construct a fake referrer URL
+        }
 
-def find_links(soup, base_url):
-    """Extract and return absolute links from the page."""
-    links = set()
-    for a_tag in soup.find_all("a", href=True):
-        url = urljoin(base_url, a_tag['href'])
-        if url.startswith(('http://', 'https://')):
-            links.add(url)
-    return links
-
-async def fetch_page(session, url):
-    """Fetch the content of the page asynchronously."""
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
-    try:
-        async with session.get(url, headers=headers, timeout=10) as response:
-            response.raise_for_status()  # Raise error for bad status codes
-            return await response.text()
-    except aiohttp.ClientError as e:
-        st.warning(f"Error fetching {url}: {e}")
-        return ""
-
-async def scrape_emails_recursive(session, url, depth, visited):
-    """Recursively scrape emails from a URL and its linked pages up to a certain depth."""
-    if depth < 0 or url in visited:
-        return set()  # Return an empty set if depth is 0 or URL is already visited
-
-    visited.add(url)  # Mark URL as visited
-    emails = set()  # To store all the found emails
-
-    try:
-        page_content = await fetch_page(session, url)
-        if page_content:
-            soup = BeautifulSoup(page_content, 'html.parser')
-
-            # Extract emails from the current page
-            emails.update(extract_emails(soup))
-
-            # Recursively scrape links found on the current page
-            links = find_links(soup, url)
-            tasks = [scrape_emails_recursive(session, link, depth - 1, visited) for link in links]
-            results = await asyncio.gather(*tasks)
-            for result in results:
-                emails.update(result)
-    except Exception as e:
-        st.error(f"Error fetching the URL: {url}. {e}")
-    
-    return emails
-
-async def main_scraper(url, depth):
-    visited = set()
-    async with aiohttp.ClientSession() as session:
-        return await scrape_emails_recursive(session, url, depth, visited)
-
-# Input for the URL and crawl depth
-url = st.text_input("Enter URL to scrape emails from", "BBC.com")
-depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
-
-# Button to start scraping
-if st.button("Start Scraping"):
-    if url.strip():  # Ensure the URL is not empty
-        url = validate_and_format_url(url.strip())  # Validate and format URL
-        
+    async def fetch_url(self, session: ClientSession, url: str) -> str:
         try:
-            # Show progress spinner while scraping
-            with st.spinner("Scraping emails..."):
-                all_emails = asyncio.run(main_scraper(url, depth))
-                
-                if all_emails:
-                    st.success(f"Found {len(all_emails)} unique email(s):")
-                    st.write(list(all_emails))
-                    
-                    # Convert email set to DataFrame for CSV download
-                    email_df = pd.DataFrame(list(all_emails), columns=["Email"])
-                    
-                    # Download button for CSV
-                    csv = email_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="Download as CSV",
-                        data=csv,
-                        file_name='emails.csv',
-                        mime='text/csv'
-                    )
-                else:
-                    st.info("No emails found on the page.")
-        except Exception as e:
-            st.error(f"Error occurred: {e}")
-    else:
-        st.warning("Please enter a valid URL.")
+            async with self.semaphore:  # Limit concurrent requests
+                headers = self.generate_headers()  # Generate random headers
+                async with session.get(url, headers=headers, timeout=ClientTimeout(total=10)) as response:
+                    return await response.text()
+        except ClientError as e:
+            print(f"Error fetching {url}: {e}")
+            return ""
 
-# Disclaimer
-st.warning("⚠️ Warning: Note that not all websites may contain email addresses or allow email harvesting. Harvesting email addresses without permission may be a violation of the website's terms of service or applicable laws. Be sure to read and understand the website's terms of service and any applicable laws or regulations before scraping any website.")
+    def extract_emails(self, html_content: str) -> Set[str]:
+        return set(self.email_pattern.findall(html_content))
+
+    def extract_links(self, html_content: str, base_url: str) -> Set[str]:
+        soup = BeautifulSoup(html_content, 'html.parser')
+        links = set()
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag['href']
+            full_url = urljoin(base_url, href)
+            if urlparse(full_url).netloc == urlparse(base_url).netloc:
+                links.add(full_url)
+        return links
+
+    async def crawl(self, url: str, max_depth: int = 2) -> Set[str]:
+        if max_depth < 0 or url in self.visited_urls:
+            return set()
+
+        self.visited_urls.add(url)
+        emails = set()
+
+        async with ClientSession() as session:
+            html_content = await self.fetch_url(session, url)
+            if html_content:
+                emails.update(self.extract_emails(html_content))
+
+                if max_depth > 0:
+                    links = self.extract_links(html_content, url)
+                    tasks = [self.crawl(link, max_depth - 1) for link in links]
+                    results = await asyncio.gather(*tasks)
+                    for result in results:
+                        emails.update(result)
+
+        return emails
+
+    async def harvest_emails(self, urls: List[str], max_depth: int = 2) -> Set[str]:
+        tasks = [self.crawl(url, max_depth) for url in urls]
+        results = await asyncio.gather(*tasks)
+        return set.union(*results)
+
+async def main():
+    harvester = EmailHarvester(max_concurrent_requests=10)
+    urls = [
+        "https://example.com",
+        "https://example.org"
+    ]
+    emails = await harvester.harvest_emails(urls, max_depth=2)
+    print(f"Found {len(emails)} unique emails:")
+    for email in sorted(emails):
+        print(email)
+
+if __name__ == "__main__":
+    asyncio.run(main())
