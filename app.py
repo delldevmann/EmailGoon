@@ -70,8 +70,8 @@ async def main_async(urls: List[str], max_depth: int):
     return emails
 
 # Streamlit app
-st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
-st.title("📧 Recursive Email Harvester")
+st.set_page_config(page_title='Email Harvester', page_icon='🌾🚜', initial_sidebar_state="auto")
+st.title("📧 Streamlit Cloud Email Harvester")
 
 # Input URL
 urls_input = st.text_area("Enter URLs to scrape emails from (one per line)")
