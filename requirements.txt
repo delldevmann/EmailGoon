@@ -48,9 +48,11 @@ tzlocal==5.0.1
 urllib3==2.0.2
 validators==0.20.0
 zipp==3.15.0
-openpyxl
-faker
+openpyxl==3.1.2
 
 # Add these for Playwright and Stealth
 playwright==1.36.0
 playwright-stealth==1.0.6
+
+# Faker library
+Faker==18.9.0
