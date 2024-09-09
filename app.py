@@ -62,6 +62,12 @@ class EmailHarvester:
         tasks = [self.crawl(url, max_depth) for url in urls]
         results = await asyncio.gather(*tasks)
         return set.union(*results)
+def validate_and_format_url(url: str) -> str:
+    """Ensure the URL starts with http:// or https://. If not, prepend https://."""
+    parsed_url = urlparse(url)
+    if not parsed_url.scheme:  # If no scheme, assume https
+        return "https://" + url
+    return url
 
 async def main_async(urls: List[str], max_depth: int):
     """Main async function to start the email harvester."""
@@ -71,7 +77,7 @@ async def main_async(urls: List[str], max_depth: int):
 
 # Streamlit app
 st.set_page_config(page_title='Email Harvester', page_icon='🌾🚜', initial_sidebar_state="auto")
-st.title("📧 Streamlit Cloud Email Harvester")
+st.title("🌾🚜  Streamlit Cloud Email Harvester")
 
 # Input URL
 urls_input = st.text_area("Enter URLs to scrape emails from (one per line)")
