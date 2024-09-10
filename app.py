@@ -59,18 +59,15 @@ class EmailHarvester:
         emails = set()
 
         async with aiohttp.ClientSession() as session:
-            try:
-                html_content = await self.fetch_url(session, url)
-                emails.update(self.extract_emails(html_content))
+            html_content = await self.fetch_url(session, url)
+            emails.update(self.extract_emails(html_content))
 
-                if max_depth > 0:
-                    links = self.extract_links(html_content, url)
-                    tasks = [self.crawl(link, max_depth - 1) for link in links]
-                    results = await asyncio.gather(*tasks)
-                    for result in results:
-                        emails.update(result)
-            except aiohttp.ClientError:
-                self.errors[url] = "Failed to fetch URL"
+            if max_depth > 0:
+                links = self.extract_links(html_content, url)
+                tasks = [self.crawl(link, max_depth - 1) for link in links]
+                results = await asyncio.gather(*tasks)
+                for result in results:
+                    emails.update(result)
 
         return emails
 
@@ -128,6 +125,15 @@ if st.button("Start Scraping"):
                         data=csv,
                         file_name='emails.csv',
                         mime='text/csv'
+                    )
+                    
+                    # Download button for JSON
+                    json_emails = email_df.to_json(orient='records', lines=True)
+                    st.download_button(
+                        label="Download Emails as JSON",
+                        data=json_emails,
+                        file_name='emails.json',
+                        mime='application/json'
                     )
                 else:
                     st.info("No emails found on the pages.")
