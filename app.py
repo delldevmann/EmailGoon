@@ -156,7 +156,8 @@ if st.button("Start Scraping"):
                 # Show errors
                 if errors:
                     st.error(f"Errors encountered:")
-                    st.write(errors)
+                    for url, error in errors.items():
+                        st.write(f"**{url}**: {error}")
 
                     # Convert errors to DataFrame for CSV and JSON download
                     errors_df = pd.DataFrame(list(errors.items()), columns=["URL", "Error"])
@@ -171,7 +172,7 @@ if st.button("Start Scraping"):
                     )
 
                     # Download button for errors JSON
-                    json_errors = json.dumps(errors, indent=4)
+                    json_errors = errors_df.to_json(orient='records', lines=True)
                     st.download_button(
                         label="Download Errors as JSON",
                         data=json_errors,
