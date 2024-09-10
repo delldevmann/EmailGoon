@@ -8,7 +8,6 @@ from bs4 import BeautifulSoup
 import chardet  # To detect encoding
 import streamlit as st
 import pandas as pd
-import json
 
 class EmailHarvester:
     def __init__(self):
@@ -33,9 +32,15 @@ class EmailHarvester:
 
     async def fetch_url(self, session: aiohttp.ClientSession, url: str) -> str:
         """Fetch a URL's content asynchronously with proper encoding handling."""
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+        }
         try:
             async with session.get(url, headers=headers) as response:
+                if response.status != 200:
+                    self.errors[url] = f"Failed to fetch: {response.status}"
+                    return ""
+                
                 # Read the raw bytes of the response
                 raw_content = await response.content.read()
 
@@ -75,14 +80,15 @@ class EmailHarvester:
 
         async with aiohttp.ClientSession() as session:
             html_content = await self.fetch_url(session, url)
-            emails.update(self.extract_emails(html_content))
+            if html_content:
+                emails.update(self.extract_emails(html_content))
 
-            if max_depth > 0:
-                links = self.extract_links(html_content, url)
-                tasks = [self.crawl(link, max_depth - 1) for link in links]
-                results = await asyncio.gather(*tasks)
-                for result in results:
-                    emails.update(result)
+                if max_depth > 0:
+                    links = self.extract_links(html_content, url)
+                    tasks = [self.crawl(link, max_depth - 1) for link in links]
+                    results = await asyncio.gather(*tasks)
+                    for result in results:
+                        emails.update(result)
 
         return emails
 
