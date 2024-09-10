@@ -111,7 +111,7 @@ if st.button("Start Scraping"):
             # Show progress spinner while scraping
             with st.spinner("Scraping emails..."):
                 # Run the asynchronous scraping function
-                all_emails, errors = await main_async(urls, depth)
+                all_emails, errors = asyncio.run(main_async(urls, depth))
                 
                 # Show results
                 if all_emails:
