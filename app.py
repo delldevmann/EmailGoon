@@ -1,18 +1,20 @@
 import asyncio
 import re
 from urllib.parse import urljoin, urlparse
-from typing import List, Set
+from typing import List, Set, Dict
 
 import aiohttp
 from bs4 import BeautifulSoup
 import chardet  # To detect encoding
 import streamlit as st
 import pandas as pd
+import json
 
 class EmailHarvester:
     def __init__(self):
         self.visited_urls: Set[str] = set()
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
+        self.errors: Dict[str, str] = {}  # Dictionary to store errors
 
     async def fetch_url(self, session: aiohttp.ClientSession, url: str) -> str:
         """Fetch a URL's content asynchronously with proper encoding handling."""
@@ -30,7 +32,7 @@ class EmailHarvester:
                 # Decode using the detected encoding
                 return raw_content.decode(detected_encoding, errors='replace')
         except aiohttp.ClientError as e:
-            st.warning(f"Error fetching {url}: {e}")
+            self.errors[url] = str(e)
             return ""
 
     def extract_emails(self, html_content: str) -> Set[str]:
@@ -68,7 +70,7 @@ class EmailHarvester:
                     for result in results:
                         emails.update(result)
             except aiohttp.ClientError:
-                st.warning(f"Error fetching {url}")
+                self.errors[url] = "Failed to fetch URL"
 
         return emails
 
@@ -89,7 +91,7 @@ async def main_async(urls: List[str], max_depth: int):
     """Main async function to start the email harvester."""
     harvester = EmailHarvester()
     emails = await harvester.harvest_emails(urls, max_depth)
-    return emails
+    return emails, harvester.errors
 
 # Streamlit app
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
@@ -109,8 +111,9 @@ if st.button("Start Scraping"):
             # Show progress spinner while scraping
             with st.spinner("Scraping emails..."):
                 # Run the asynchronous scraping function
-                all_emails = asyncio.run(main_async(urls, depth))
+                all_emails, errors = await main_async(urls, depth)
                 
+                # Show results
                 if all_emails:
                     st.success(f"Found {len(all_emails)} unique email(s):")
                     st.write(list(all_emails))
@@ -121,13 +124,39 @@ if st.button("Start Scraping"):
                     # Download button for CSV
                     csv = email_df.to_csv(index=False).encode('utf-8')
                     st.download_button(
-                        label="Download as CSV",
+                        label="Download Emails as CSV",
                         data=csv,
                         file_name='emails.csv',
                         mime='text/csv'
                     )
                 else:
                     st.info("No emails found on the pages.")
+                
+                # Show errors
+                if errors:
+                    st.error(f"Errors encountered:")
+                    st.write(errors)
+
+                    # Convert errors to DataFrame for CSV and JSON download
+                    errors_df = pd.DataFrame(list(errors.items()), columns=["URL", "Error"])
+
+                    # Download button for errors CSV
+                    csv_errors = errors_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Download Errors as CSV",
+                        data=csv_errors,
+                        file_name='errors.csv',
+                        mime='text/csv'
+                    )
+
+                    # Download button for errors JSON
+                    json_errors = json.dumps(errors, indent=4)
+                    st.download_button(
+                        label="Download Errors as JSON",
+                        data=json_errors,
+                        file_name='errors.json',
+                        mime='application/json'
+                    )
         except Exception as e:
             st.error(f"Error occurred: {e}")
     else:
