@@ -20,8 +20,7 @@ class EmailHarvester:
         """Fetch a URL's content asynchronously with proper encoding handling."""
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
         try:
-            async with session.get(url, headers=headers) as response:
-                # Read the raw bytes of the response
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 raw_content = await response.content.read()
 
                 # Detect the encoding using chardet
@@ -29,18 +28,22 @@ class EmailHarvester:
                 if detected_encoding is None:
                     detected_encoding = 'utf-8'  # Fallback to utf-8 if detection fails
 
-                # Decode using the detected encoding
                 return raw_content.decode(detected_encoding, errors='replace')
-        except aiohttp.ClientError as e:
-            self.errors[url] = str(e)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            self.errors[url] = f"{type(e).__name__}: {str(e)}"
             return ""
 
     def extract_emails(self, html_content: str) -> Set[str]:
         """Extract emails using regex from HTML content."""
-        return set(self.email_pattern.findall(html_content))
+        if html_content:  # Ensure we are not working with empty content
+            return set(self.email_pattern.findall(html_content))
+        return set()
 
     def extract_links(self, html_content: str, base_url: str) -> Set[str]:
         """Extract links from the HTML content and return absolute URLs."""
+        if not html_content:
+            return set()
+
         soup = BeautifulSoup(html_content, 'html.parser')
         links = set()
         for a_tag in soup.find_all('a', href=True):
@@ -50,7 +53,7 @@ class EmailHarvester:
                 links.add(full_url)
         return links
 
-    async def crawl(self, url: str, max_depth: int = 2) -> Set[str]:
+    async def crawl(self, session: aiohttp.ClientSession, url: str, max_depth: int = 2) -> Set[str]:
         """Crawl a URL recursively up to a max depth."""
         if max_depth < 0 or url in self.visited_urls:
             return set()
@@ -58,23 +61,23 @@ class EmailHarvester:
         self.visited_urls.add(url)
         emails = set()
 
-        async with aiohttp.ClientSession() as session:
-            html_content = await self.fetch_url(session, url)
-            emails.update(self.extract_emails(html_content))
+        html_content = await self.fetch_url(session, url)
+        emails.update(self.extract_emails(html_content))
 
-            if max_depth > 0:
-                links = self.extract_links(html_content, url)
-                tasks = [self.crawl(link, max_depth - 1) for link in links]
-                results = await asyncio.gather(*tasks)
-                for result in results:
-                    emails.update(result)
+        if max_depth > 0:
+            links = self.extract_links(html_content, url)
+            tasks = [self.crawl(session, link, max_depth - 1) for link in links]
+            results = await asyncio.gather(*tasks)
+            for result in results:
+                emails.update(result)
 
         return emails
 
     async def harvest_emails(self, urls: List[str], max_depth: int = 2) -> Set[str]:
         """Harvest emails from multiple URLs concurrently."""
-        tasks = [self.crawl(url, max_depth) for url in urls]
-        results = await asyncio.gather(*tasks)
+        async with aiohttp.ClientSession() as session:
+            tasks = [self.crawl(session, url, max_depth) for url in urls]
+            results = await asyncio.gather(*tasks)
         return set.union(*results)
 
 def validate_and_format_url(url: str) -> str:
@@ -108,7 +111,9 @@ if st.button("Start Scraping"):
             # Show progress spinner while scraping
             with st.spinner("Scraping emails..."):
                 # Run the asynchronous scraping function
-                all_emails, errors = asyncio.run(main_async(urls, depth))
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                all_emails, errors = loop.run_until_complete(main_async(urls, depth))
                 
                 # Show results
                 if all_emails:
