@@ -21,7 +21,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-
 # Function to get the geolocation of a proxy IP
 async def get_proxy_geolocation(proxy):
     ip = proxy.split(':')[0]  # Get the IP part of the proxy
@@ -157,10 +156,10 @@ async def main_async(urls: List[str], max_depth: int, selected_proxy: str):
 
 # Streamlit app interface
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
-st.title("")
+st.title("🌾🚜 Cloud Email Harvester with Proxy Dashboard")
 
-# Display the image from GitHub using the raw URL
-st.image('https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png', use_column_width=True)
+# Display the image from GitHub using the raw URL and apply the custom class for spacing
+st.image('https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png', caption="Email Harvester", use_column_width=True, class_="custom-image")
 
 if 'proxy_results' not in st.session_state:
     st.session_state['proxy_results'] = None
