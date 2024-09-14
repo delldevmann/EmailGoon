@@ -173,3 +173,8 @@ if st.button("Start Scraping"):
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
+    else:
+        st.warning("Please enter at least one URL.")
+
+# Disclaimer about scraping policies
+st.warning("⚠️ Please ensure you have permission to scrape data from websites and comply with local regulations.")
