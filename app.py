@@ -29,13 +29,11 @@ async def get_proxy_geolocation(proxy):
         return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown', 'error': str(e)}
 
 # Test if a proxy is working by making a request to a known website
-async def test_proxy(proxy):
+async def test_proxy(proxy, session):
     test_url = "http://www.google.com"
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(test_url, proxy=f"http://{proxy}", timeout=5) as response:
-                if response.status == 200:
-                    return True
+        async with session.get(test_url, proxy=f"http://{proxy}", timeout=5) as response:
+            return response.status == 200
     except:
         return False
 
@@ -54,21 +52,20 @@ async def fetch_free_proxies():
         'https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt',
     ]
 
-    # Randomly choose a source and fetch the proxy list
     selected_source = random.choice(proxy_sources)
     async with aiohttp.ClientSession() as session:
         async with session.get(selected_source) as response:
             proxy_list = await response.text()
             proxies = proxy_list.splitlines()[:20]
 
-            # Gather all tasks for testing proxies and getting geolocation
             tasks = []
             for proxy in proxies:
-                tasks.append(asyncio.gather(test_proxy(proxy), get_proxy_geolocation(proxy)))
+                tasks.append(
+                    asyncio.gather(test_proxy(proxy, session), get_proxy_geolocation(proxy))
+                )
 
             results = await asyncio.gather(*tasks)
 
-            # Combine test results and geolocation data
             proxy_details = []
             for i, (is_working, geo_info) in enumerate(results):
                 proxy_details.append({
@@ -86,50 +83,30 @@ class EmailHarvester:
     def __init__(self, selected_proxy=None):
         self.visited_urls: Set[str] = set()
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
-        self.errors: Dict[str, str] = {}  # Dictionary to store errors
-        self.selected_proxy = selected_proxy  # User-selected proxy
+        self.errors: Dict[str, str] = {}
+        self.selected_proxy = selected_proxy
 
     async def fetch_url(self, session: aiohttp.ClientSession, url: str) -> str:
-        """Fetch a URL's content asynchronously with proper encoding handling."""
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-        }
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
         try:
             async with session.get(url, headers=headers, proxy=f"http://{self.selected_proxy}" if self.selected_proxy else None) as response:
                 raw_content = await response.content.read()
-
-                # Detect the encoding using chardet
-                detected_encoding = chardet.detect(raw_content)['encoding']
-                if detected_encoding is None:
-                    detected_encoding = 'utf-8'  # Fallback to utf-8 if detection fails
-
+                detected_encoding = chardet.detect(raw_content)['encoding'] or 'utf-8'
                 return raw_content.decode(detected_encoding, errors='replace')
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             self.errors[url] = f"{type(e).__name__}: {str(e)}"
             return ""
 
     def extract_emails(self, html_content: str) -> Set[str]:
-        """Extract emails using regex from HTML content."""
-        if html_content:  # Ensure we are not working with empty content
-            return set(self.email_pattern.findall(html_content))
-        return set()
+        return set(self.email_pattern.findall(html_content)) if html_content else set()
 
     def extract_links(self, html_content: str, base_url: str) -> Set[str]:
-        """Extract links from the HTML content and return absolute URLs."""
         if not html_content:
             return set()
-
         soup = BeautifulSoup(html_content, 'html.parser')
-        links = set()
-        for a_tag in soup.find_all('a', href=True):
-            href = a_tag['href']
-            full_url = urljoin(base_url, href)
-            if urlparse(full_url).netloc == urlparse(base_url).netloc:
-                links.add(full_url)
-        return links
+        return {urljoin(base_url, a_tag['href']) for a_tag in soup.find_all('a', href=True) if urlparse(urljoin(base_url, a_tag['href'])).netloc == urlparse(base_url).netloc}
 
     async def crawl(self, session: aiohttp.ClientSession, url: str, max_depth: int = 2) -> Set[str]:
-        """Crawl a URL recursively up to a max depth."""
         if max_depth < 0 or url in self.visited_urls:
             return set()
 
@@ -149,7 +126,6 @@ class EmailHarvester:
         return emails
 
     async def harvest_emails(self, urls: List[str], max_depth: int = 2) -> Set[str]:
-        """Harvest emails from multiple URLs concurrently."""
         async with aiohttp.ClientSession() as session:
             tasks = [self.crawl(session, url, max_depth) for url in urls]
             results = await asyncio.gather(*tasks)
@@ -157,24 +133,22 @@ class EmailHarvester:
 
 # Function to validate URLs
 def validate_and_format_url(url: str) -> str:
-    """Ensure the URL starts with http:// or https://. If not, prepend https://."""
     parsed_url = urlparse(url)
-    if not parsed_url.scheme:  # If no scheme, assume https
-        return "https://" + url
-    return url
+    return "https://" + url if not parsed_url.scheme else url
 
 # Async main function
 async def main_async(urls: List[str], max_depth: int, selected_proxy: str):
-    """Main async function to start the email harvester."""
     harvester = EmailHarvester(selected_proxy=selected_proxy)
     emails = await harvester.harvest_emails(urls, max_depth)
-    return emails, harvester.errors  # Return errors if any
+    return emails, harvester.errors
 
 # Streamlit app interface
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
-st.title("🌾🚜 Cloud Email Harvester")
+st.title("🌾🚜 Cloud Email Harvester with Proxy Dashboard")
 
-# Initialize session state for selected proxy and proxy results
+# Display the image from GitHub using the raw URL
+st.image('https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f.webp', caption="Email Harvester", use_column_width=True)
+
 if 'proxy_results' not in st.session_state:
     st.session_state['proxy_results'] = None
 if 'selected_proxy' not in st.session_state:
@@ -193,7 +167,6 @@ if st.button("Validate Proxies"):
             st.session_state['proxy_results'] = loop.run_until_complete(fetch_free_proxies())
             proxy_results = st.session_state['proxy_results']
 
-        # Display Proxy Dashboard
         if proxy_results:
             st.success("Proxies validated successfully!")
             proxy_df = pd.DataFrame(proxy_results)
@@ -210,15 +183,10 @@ if proxy_results:
     with st.expander("Step 2: Choose a Proxy and Start Scraping", expanded=True):
         st.subheader("Choose a Proxy")
         working_proxies = [f"{p['proxy']} ({p['city']}, {p['country']})" for p in proxy_results if p['is_working']]
-        
-        # Store the selected proxy in session state
         selected_proxy_display = st.selectbox("Select a Proxy", working_proxies, key='selected_proxy_display')
-        
-        # Extract just the proxy part for actual use
         if selected_proxy_display:
-            st.session_state['selected_proxy'] = selected_proxy_display.split()[0]  # Store the selected proxy
+            st.session_state['selected_proxy'] = selected_proxy_display.split()[0]
             selected_proxy = st.session_state['selected_proxy']
-        
         if selected_proxy:
             st.success(f"Selected Proxy: {selected_proxy_display}")
             st.info(f"Using proxy: {selected_proxy}")
@@ -230,40 +198,29 @@ if proxy_results:
         if st.button("Start Scraping"):
             if urls_input.strip() and selected_proxy:
                 urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
-                
                 try:
                     with st.spinner("Scraping emails..."):
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         all_emails, errors = loop.run_until_complete(main_async(urls, depth, selected_proxy))
 
-                    # Display Results
                     if all_emails:
                         st.success(f"Found {len(all_emails)} unique email(s):")
                         st.write(list(all_emails))
-                        
-                        # Convert emails to DataFrame for CSV download
                         email_df = pd.DataFrame(list(all_emails), columns=["Email"])
                         csv = email_df.to_csv(index=False).encode('utf-8')
-
-                        # CSV and JSON Download
                         st.download_button(label="Download Emails as CSV", data=csv, file_name='emails.csv', mime='text/csv')
-
                         json_emails = email_df.to_json(orient='records', lines=True)
                         st.download_button(label="Download Emails as JSON", data=json_emails, file_name='emails.json', mime='application/json')
-
                     else:
                         st.info("No emails found on the pages.")
-
-                    # Display Errors if any
                     if errors:
                         st.error("Errors encountered:")
                         st.write(errors)
-
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
             else:
                 st.warning("Please enter at least one URL and select a proxy.")
 
-# Disclaimer about scraping policies
+# Disclaimer
 st.warning("⚠️ Please ensure you have permission to scrape data from websites and comply with local regulations.")
