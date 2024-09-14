@@ -17,7 +17,7 @@ st.markdown(
     """
     <style>
     .custom-image {
-        margin-bottom: -20px;
+        margin-bottom: -40px;
     }
     </style>
     """,
