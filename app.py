@@ -24,6 +24,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Display the image from GitHub using raw URL inside markdown
+st.markdown(
+    """
+    <img src='https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png' class='custom-image' alt='Email Harvester' width='100%'>
+    """,
+    unsafe_allow_html=True
+)
 # Function to get the geolocation of a proxy IP
 async def get_proxy_geolocation(proxy):
     ip = proxy.split(':')[0]  # Get the IP part of the proxy
