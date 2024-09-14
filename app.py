@@ -9,6 +9,17 @@ import chardet  # To detect encoding
 import streamlit as st
 import pandas as pd
 
+# Test if a proxy is working by making a request to a known website
+async def test_proxy(proxy):
+    test_url = "http://www.google.com"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(test_url, proxy=f"http://{proxy}", timeout=5) as response:
+                if response.status == 200:
+                    return True
+    except:
+        return False
+
 # Fetch proxies from multiple GitHub sources (list of public proxies)
 async def fetch_free_proxies():
     proxy_sources = [
@@ -29,8 +40,13 @@ async def fetch_free_proxies():
     async with aiohttp.ClientSession() as session:
         async with session.get(selected_source) as response:
             proxy_list = await response.text()
-            # Return the first 20 proxies from the selected source
-            return proxy_list.splitlines()[:20]
+            proxies = proxy_list.splitlines()[:20]
+            # Test each proxy and return the list of (proxy, status) tuples
+            working_proxies = []
+            for proxy in proxies:
+                is_working = await test_proxy(proxy)
+                working_proxies.append((proxy, is_working))
+            return working_proxies
 
 # Define the Email Harvester class
 class EmailHarvester:
@@ -38,7 +54,7 @@ class EmailHarvester:
         self.visited_urls: Set[str] = set()
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
         self.errors: Dict[str, str] = {}  # Dictionary to store errors
-        self.proxies = proxies  # List of proxies
+        self.proxies = [proxy for proxy, status in proxies if status]  # Only keep working proxies
 
     def get_random_proxy(self):
         """Get a random proxy from the list."""
@@ -127,11 +143,11 @@ async def main_async(urls: List[str], max_depth: int):
     proxies = await fetch_free_proxies()  # Get a list of 20 free proxies from GitHub
     harvester = EmailHarvester(proxies=proxies)
     emails = await harvester.harvest_emails(urls, max_depth)
-    return emails, harvester.errors
+    return emails, harvester.errors, proxies  # Return proxies too for displaying
 
 # Streamlit app interface
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
-st.title("🌾🚜 Cloud Email Harvester with Multiple Free Proxy Sources")
+st.title("🌾🚜 Cloud Email Harvester with Proxy Status Indicator")
 
 # Input for URLs
 urls_input = st.text_area("Enter URLs (one per line):")
@@ -146,7 +162,7 @@ if st.button("Start Scraping"):
             with st.spinner("Scraping emails..."):
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                all_emails, errors = loop.run_until_complete(main_async(urls, depth))
+                all_emails, errors, proxies = loop.run_until_complete(main_async(urls, depth))
 
             # Display Results
             if all_emails:
@@ -165,7 +181,13 @@ if st.button("Start Scraping"):
 
             else:
                 st.info("No emails found on the pages.")
-            
+
+            # Display Proxy Status
+            st.subheader("Proxy Status")
+            for proxy, is_working in proxies:
+                color = "green" if is_working else "red"
+                st.markdown(f"<span style='color:{color}'>{proxy}</span>", unsafe_allow_html=True)
+
             # Display Errors if any
             if errors:
                 st.error("Errors encountered:")
