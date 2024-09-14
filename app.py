@@ -144,7 +144,7 @@ async def main_async(urls: List[str], max_depth: int, selected_proxy: str):
 
 # Streamlit app interface
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
-st.title("🌾🚜 Cloud Email Harvester with Proxy Dashboard")
+st.title("🌾🚜 Cloud Email Harvester")
 
 # Display the image from GitHub using the raw URL
 st.image('https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f.webp', caption="Email Harvester", use_column_width=True)
