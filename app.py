@@ -139,7 +139,7 @@ class EmailHarvester:
         emails = set()
 
         html_content = await self.fetch_url(session, url)
-        emails.update(self.extract_emails(html_content))
+        emails update(self.extract_emails(html_content))
 
         if max_depth > 0:
             links = self.extract_links(html_content, url)
