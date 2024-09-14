@@ -1,29 +1,59 @@
 import asyncio
+import random
 import re
 from urllib.parse import urljoin, urlparse
 from typing import List, Set, Dict
-
 import aiohttp
 from bs4 import BeautifulSoup
 import chardet  # To detect encoding
 import streamlit as st
 import pandas as pd
-import json
+
+# Fetch proxies from multiple GitHub sources (list of public proxies)
+async def fetch_free_proxies():
+    proxy_sources = [
+        'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
+        'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
+        'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/proxy.txt',
+        'https://raw.githubusercontent.com/a2u/free-proxy-list/main/free-proxy-list.txt',
+        'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+        'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt',
+        'https://raw.githubusercontent.com/mertguvencli/http-proxy-list/main/proxy-list/data.txt',
+        'https://raw.githubusercontent.com/jenssegers/proxy-list/main/proxies.txt',
+        'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
+        'https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt',
+    ]
+
+    # Randomly choose a source and fetch the proxy list
+    selected_source = random.choice(proxy_sources)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(selected_source) as response:
+            proxy_list = await response.text()
+            # Return the first 20 proxies from the selected source
+            return proxy_list.splitlines()[:20]
 
 # Define the Email Harvester class
 class EmailHarvester:
-    def __init__(self):
+    def __init__(self, proxies=None):
         self.visited_urls: Set[str] = set()
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
         self.errors: Dict[str, str] = {}  # Dictionary to store errors
+        self.proxies = proxies  # List of proxies
+
+    def get_random_proxy(self):
+        """Get a random proxy from the list."""
+        if self.proxies:
+            return random.choice(self.proxies)
+        return None
 
     async def fetch_url(self, session: aiohttp.ClientSession, url: str) -> str:
         """Fetch a URL's content asynchronously with proper encoding handling."""
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
         }
+        proxy = self.get_random_proxy()
         try:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url, headers=headers, proxy=f"http://{proxy}" if proxy else None) as response:
                 raw_content = await response.content.read()
 
                 # Detect the encoding using chardet
@@ -94,13 +124,14 @@ def validate_and_format_url(url: str) -> str:
 # Async main function
 async def main_async(urls: List[str], max_depth: int):
     """Main async function to start the email harvester."""
-    harvester = EmailHarvester()
+    proxies = await fetch_free_proxies()  # Get a list of 20 free proxies from GitHub
+    harvester = EmailHarvester(proxies=proxies)
     emails = await harvester.harvest_emails(urls, max_depth)
     return emails, harvester.errors
 
 # Streamlit app interface
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
-st.title("🌾🚜 Cloud Email Harvester")
+st.title("🌾🚜 Cloud Email Harvester with Multiple Free Proxy Sources")
 
 # Input for URLs
 urls_input = st.text_area("Enter URLs (one per line):")
@@ -142,8 +173,3 @@ if st.button("Start Scraping"):
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
-    else:
-        st.warning("Please enter at least one URL.")
-
-# Disclaimer about scraping policies
-st.warning("⚠️ Please ensure you have permission to scrape data from websites and comply with local regulations.")
