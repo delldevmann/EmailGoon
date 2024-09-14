@@ -23,8 +23,10 @@ async def get_proxy_geolocation(proxy):
                         'city': data.get('city', 'Unknown'),
                         'country': data.get('country', 'Unknown')
                     }
-    except:
-        return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown'}
+                else:
+                    return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown'}
+    except Exception as e:
+        return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown', 'error': str(e)}
 
 # Test if a proxy is working by making a request to a known website
 async def test_proxy(proxy):
@@ -58,43 +60,42 @@ async def fetch_free_proxies():
         async with session.get(selected_source) as response:
             proxy_list = await response.text()
             proxies = proxy_list.splitlines()[:20]
-            
-            # Test each proxy and get geolocation
-            proxy_details = []
+
+            # Gather all tasks for testing proxies and getting geolocation
+            tasks = []
             for proxy in proxies:
-                is_working = await test_proxy(proxy)
-                geo_info = await get_proxy_geolocation(proxy)
+                tasks.append(asyncio.gather(test_proxy(proxy), get_proxy_geolocation(proxy)))
+
+            results = await asyncio.gather(*tasks)
+
+            # Combine test results and geolocation data
+            proxy_details = []
+            for i, (is_working, geo_info) in enumerate(results):
                 proxy_details.append({
-                    'proxy': proxy,
+                    'proxy': proxies[i],
                     'is_working': is_working,
                     'ip': geo_info['ip'],
                     'city': geo_info['city'],
                     'country': geo_info['country']
                 })
+
             return proxy_details
 
 # Define the Email Harvester class
 class EmailHarvester:
-    def __init__(self, proxies=None):
+    def __init__(self, proxies=None, selected_proxy=None):
         self.visited_urls: Set[str] = set()
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
         self.errors: Dict[str, str] = {}  # Dictionary to store errors
-        self.proxies = [proxy['proxy'] for proxy in proxies if proxy['is_working']]  # Only keep working proxies
-
-    def get_random_proxy(self):
-        """Get a random proxy from the list."""
-        if self.proxies:
-            return random.choice(self.proxies)
-        return None
+        self.selected_proxy = selected_proxy  # User-selected proxy
 
     async def fetch_url(self, session: aiohttp.ClientSession, url: str) -> str:
         """Fetch a URL's content asynchronously with proper encoding handling."""
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
         }
-        proxy = self.get_random_proxy()
         try:
-            async with session.get(url, headers=headers, proxy=f"http://{proxy}" if proxy else None) as response:
+            async with session.get(url, headers=headers, proxy=f"http://{self.selected_proxy}" if self.selected_proxy else None) as response:
                 raw_content = await response.content.read()
 
                 # Detect the encoding using chardet
@@ -163,65 +164,86 @@ def validate_and_format_url(url: str) -> str:
     return url
 
 # Async main function
-async def main_async(urls: List[str], max_depth: int):
+async def main_async(urls: List[str], max_depth: int, selected_proxy: str):
     """Main async function to start the email harvester."""
-    proxies = await fetch_free_proxies()  # Get a list of 20 free proxies from GitHub
-    harvester = EmailHarvester(proxies=proxies)
+    harvester = EmailHarvester(selected_proxy=selected_proxy)
     emails = await harvester.harvest_emails(urls, max_depth)
-    return emails, harvester.errors, proxies  # Return proxies too for displaying
+    return emails, harvester.errors  # Return errors if any
 
 # Streamlit app interface
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
 st.title("🌾🚜 Cloud Email Harvester with Proxy Dashboard")
 
-# Input for URLs
-urls_input = st.text_area("Enter URLs (one per line):")
-depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
+# Section 1: Proxy Validation
+st.subheader("Step 1: Validate Proxies")
+proxy_results = None
+if st.button("Validate Proxies"):
+    try:
+        with st.spinner("Fetching and validating proxies..."):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            proxy_results = loop.run_until_complete(fetch_free_proxies())
 
-# Button to start scraping
-if st.button("Start Scraping"):
-    if urls_input.strip():
-        urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
-        
-        try:
-            with st.spinner("Scraping emails..."):
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                all_emails, errors, proxies = loop.run_until_complete(main_async(urls, depth))
-
-            # Display Results
-            if all_emails:
-                st.success(f"Found {len(all_emails)} unique email(s):")
-                st.write(list(all_emails))
-                
-                # Convert emails to DataFrame for CSV download
-                email_df = pd.DataFrame(list(all_emails), columns=["Email"])
-                csv = email_df.to_csv(index=False).encode('utf-8')
-
-                # CSV and JSON Download
-                st.download_button(label="Download Emails as CSV", data=csv, file_name='emails.csv', mime='text/csv')
-
-                json_emails = email_df.to_json(orient='records', lines=True)
-                st.download_button(label="Download Emails as JSON", data=json_emails, file_name='emails.json', mime='application/json')
-
-            else:
-                st.info("No emails found on the pages.")
-
-            # Display Proxy Dashboard
-            st.subheader("Proxy Dashboard")
-            proxy_df = pd.DataFrame(proxies)
+        # Display Proxy Dashboard
+        if proxy_results:
+            st.success("Proxies validated successfully!")
+            proxy_df = pd.DataFrame(proxy_results)
             proxy_df['status'] = proxy_df['is_working'].apply(lambda x: '🟢 Working' if x else '🔴 Not Working')
             st.write(proxy_df[['ip', 'city', 'country', 'status']])
+        else:
+            st.info("No proxies found.")
 
-            # Display Errors if any
-            if errors:
-                st.error("Errors encountered:")
-                st.write(errors)
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
 
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-    else:
-        st.warning("Please enter at least one URL.")
+# Section 2: Select Proxy and Scraping
+if proxy_results:
+    with st.expander("Step 2: Choose a Proxy and Start Scraping", expanded=True):
+        st.subheader("Choose a Proxy")
+        working_proxies = [f"{p['proxy']} ({p['city']}, {p['country']})" for p in proxy_results if p['is_working']]
+        selected_proxy = st.selectbox("Select a Proxy", working_proxies)
+
+        st.subheader("Enter URLs for Scraping")
+        urls_input = st.text_area("Enter URLs (one per line):")
+        depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
+
+        if st.button("Start Scraping"):
+            if urls_input.strip() and selected_proxy:
+                urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
+                
+                try:
+                    with st.spinner("Scraping emails..."):
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        all_emails, errors = loop.run_until_complete(main_async(urls, depth, selected_proxy.split()[0]))
+
+                    # Display Results
+                    if all_emails:
+                        st.success(f"Found {len(all_emails)} unique email(s):")
+                        st.write(list(all_emails))
+                        
+                        # Convert emails to DataFrame for CSV download
+                        email_df = pd.DataFrame(list(all_emails), columns=["Email"])
+                        csv = email_df.to_csv(index=False).encode('utf-8')
+
+                        # CSV and JSON Download
+                        st.download_button(label="Download Emails as CSV", data=csv, file_name='emails.csv', mime='text/csv')
+
+                        json_emails = email_df.to_json(orient='records', lines=True)
+                        st.download_button(label="Download Emails as JSON", data=json_emails, file_name='emails.json', mime='application/json')
+
+                    else:
+                        st.info("No emails found on the pages.")
+
+                    # Display Errors if any
+                    if errors:
+                        st.error("Errors encountered:")
+                        st.write(errors)
+
+                except Exception as e:
+                    st.error(f"An error occurred: {e}")
+            else:
+                st.warning("Please enter at least one URL and select a proxy.")
 
 # Disclaimer about scraping policies
 st.warning("⚠️ Please ensure you have permission to scrape data from websites and comply with local regulations.")
