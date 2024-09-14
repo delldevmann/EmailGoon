@@ -9,6 +9,19 @@ import chardet  # To detect encoding
 import streamlit as st
 import pandas as pd
 
+# Add CSS to reduce the margin below the image
+st.markdown(
+    """
+    <style>
+    .custom-image {
+        margin-bottom: -20px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 # Function to get the geolocation of a proxy IP
 async def get_proxy_geolocation(proxy):
     ip = proxy.split(':')[0]  # Get the IP part of the proxy
