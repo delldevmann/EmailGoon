@@ -83,7 +83,7 @@ async def fetch_free_proxies():
 
 # Define the Email Harvester class
 class EmailHarvester:
-    def __init__(self, proxies=None, selected_proxy=None):
+    def __init__(self, selected_proxy=None):
         self.visited_urls: Set[str] = set()
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
         self.errors: Dict[str, str] = {}  # Dictionary to store errors
@@ -177,6 +177,8 @@ st.title("🌾🚜 Cloud Email Harvester with Proxy Dashboard")
 # Section 1: Proxy Validation
 st.subheader("Step 1: Validate Proxies")
 proxy_results = None
+selected_proxy = None
+
 if st.button("Validate Proxies"):
     try:
         with st.spinner("Fetching and validating proxies..."):
@@ -201,7 +203,14 @@ if proxy_results:
     with st.expander("Step 2: Choose a Proxy and Start Scraping", expanded=True):
         st.subheader("Choose a Proxy")
         working_proxies = [f"{p['proxy']} ({p['city']}, {p['country']})" for p in proxy_results if p['is_working']]
-        selected_proxy = st.selectbox("Select a Proxy", working_proxies)
+        selected_proxy_display = st.selectbox("Select a Proxy", working_proxies)
+        
+        # Extract just the proxy part for actual use
+        selected_proxy = selected_proxy_display.split()[0]  # This is just the proxy part like '123.45.67.89:8080'
+        
+        if selected_proxy:
+            st.success(f"Selected Proxy: {selected_proxy_display}")
+            st.info(f"Using proxy: {selected_proxy}")
 
         st.subheader("Enter URLs for Scraping")
         urls_input = st.text_area("Enter URLs (one per line):")
@@ -215,7 +224,7 @@ if proxy_results:
                     with st.spinner("Scraping emails..."):
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        all_emails, errors = loop.run_until_complete(main_async(urls, depth, selected_proxy.split()[0]))
+                        all_emails, errors = loop.run_until_complete(main_async(urls, depth, selected_proxy))
 
                     # Display Results
                     if all_emails:
