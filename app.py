@@ -10,6 +10,7 @@ import streamlit as st
 import pandas as pd
 import json
 
+# Define the Email Harvester class
 class EmailHarvester:
     def __init__(self):
         self.visited_urls: Set[str] = set()
@@ -23,7 +24,6 @@ class EmailHarvester:
         }
         try:
             async with session.get(url, headers=headers) as response:
-                # Read the raw bytes of the response
                 raw_content = await response.content.read()
 
                 # Detect the encoding using chardet
@@ -31,7 +31,6 @@ class EmailHarvester:
                 if detected_encoding is None:
                     detected_encoding = 'utf-8'  # Fallback to utf-8 if detection fails
 
-                # Decode using the detected encoding
                 return raw_content.decode(detected_encoding, errors='replace')
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             self.errors[url] = f"{type(e).__name__}: {str(e)}"
@@ -84,6 +83,7 @@ class EmailHarvester:
             results = await asyncio.gather(*tasks)
         return set.union(*results)
 
+# Function to validate URLs
 def validate_and_format_url(url: str) -> str:
     """Ensure the URL starts with http:// or https://. If not, prepend https://."""
     parsed_url = urlparse(url)
@@ -91,89 +91,59 @@ def validate_and_format_url(url: str) -> str:
         return "https://" + url
     return url
 
+# Async main function
 async def main_async(urls: List[str], max_depth: int):
     """Main async function to start the email harvester."""
     harvester = EmailHarvester()
     emails = await harvester.harvest_emails(urls, max_depth)
     return emails, harvester.errors
 
-# Streamlit app
+# Streamlit app interface
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
 st.title("🌾🚜 Cloud Email Harvester")
 
-# Input URL
-urls_input = st.text_area("Enter URLs to scrape emails from (one per line)")
+# Input for URLs
+urls_input = st.text_area("Enter URLs (one per line):")
 depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
-
-# Convert the input into a list of URLs and validate them
-urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
 
 # Button to start scraping
 if st.button("Start Scraping"):
-    if urls:
+    if urls_input.strip():
+        urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
+        
         try:
-            # Show progress spinner while scraping
             with st.spinner("Scraping emails..."):
-                # Run the asynchronous scraping function
-                all_emails, errors = asyncio.run(main_async(urls, depth))
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                all_emails, errors = loop.run_until_complete(main_async(urls, depth))
+
+            # Display Results
+            if all_emails:
+                st.success(f"Found {len(all_emails)} unique email(s):")
+                st.write(list(all_emails))
                 
-                # Show results
-                if all_emails:
-                    st.success(f"Found {len(all_emails)} unique email(s):")
-                    st.write(list(all_emails))
-                    
-                    # Convert email set to DataFrame for CSV download
-                    email_df = pd.DataFrame(list(all_emails), columns=["Email"])
-                    
-                    # Download button for CSV
-                    csv = email_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="Download Emails as CSV",
-                        data=csv,
-                        file_name='emails.csv',
-                        mime='text/csv'
-                    )
-                    
-                    # Download button for JSON
-                    json_emails = email_df.to_json(orient='records', lines=True)
-                    st.download_button(
-                        label="Download Emails as JSON",
-                        data=json_emails,
-                        file_name='emails.json',
-                        mime='application/json'
-                    )
-                else:
-                    st.info("No emails found on the pages.")
-                
-                # Show errors
-                if errors:
-                    st.error(f"Errors encountered:")
-                    st.write(errors)
+                # Convert emails to DataFrame for CSV download
+                email_df = pd.DataFrame(list(all_emails), columns=["Email"])
+                csv = email_df.to_csv(index=False).encode('utf-8')
 
-                    # Convert errors to DataFrame for CSV and JSON download
-                    errors_df = pd.DataFrame(list(errors.items()), columns=["URL", "Error"])
+                # CSV and JSON Download
+                st.download_button(label="Download Emails as CSV", data=csv, file_name='emails.csv', mime='text/csv')
 
-                    # Download button for errors CSV
-                    csv_errors = errors_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="Download Errors as CSV",
-                        data=csv_errors,
-                        file_name='errors.csv',
-                        mime='text/csv'
-                    )
+                json_emails = email_df.to_json(orient='records', lines=True)
+                st.download_button(label="Download Emails as JSON", data=json_emails, file_name='emails.json', mime='application/json')
 
-                    # Download button for errors JSON
-                    json_errors = json.dumps(errors, indent=4)
-                    st.download_button(
-                        label="Download Errors as JSON",
-                        data=json_errors,
-                        file_name='errors.json',
-                        mime='application/json'
-                    )
+            else:
+                st.info("No emails found on the pages.")
+            
+            # Display Errors if any
+            if errors:
+                st.error("Errors encountered:")
+                st.write(errors)
+
         except Exception as e:
-            st.error(f"Error occurred: {e}")
+            st.error(f"An error occurred: {e}")
     else:
-        st.warning("Please enter at least one valid URL.")
+        st.warning("Please enter at least one URL.")
 
-# Disclaimer
-st.warning("⚠️ Warning: Some websites may restrict scraping. Ensure you have permission to scrape data and comply with local regulations.")
+# Disclaimer about scraping policies
+st.warning("⚠️ Please ensure you have permission to scrape data from websites and comply with local regulations.")
