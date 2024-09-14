@@ -9,6 +9,23 @@ import chardet  # To detect encoding
 import streamlit as st
 import pandas as pd
 
+# Function to get the geolocation of a proxy IP
+async def get_proxy_geolocation(proxy):
+    ip = proxy.split(':')[0]  # Get the IP part of the proxy
+    api_url = f"https://ipinfo.io/{ip}/json"  # Using ipinfo.io API for geolocation
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return {
+                        'ip': ip,
+                        'city': data.get('city', 'Unknown'),
+                        'country': data.get('country', 'Unknown')
+                    }
+    except:
+        return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown'}
+
 # Test if a proxy is working by making a request to a known website
 async def test_proxy(proxy):
     test_url = "http://www.google.com"
@@ -41,12 +58,20 @@ async def fetch_free_proxies():
         async with session.get(selected_source) as response:
             proxy_list = await response.text()
             proxies = proxy_list.splitlines()[:20]
-            # Test each proxy and return the list of (proxy, status) tuples
-            working_proxies = []
+            
+            # Test each proxy and get geolocation
+            proxy_details = []
             for proxy in proxies:
                 is_working = await test_proxy(proxy)
-                working_proxies.append((proxy, is_working))
-            return working_proxies
+                geo_info = await get_proxy_geolocation(proxy)
+                proxy_details.append({
+                    'proxy': proxy,
+                    'is_working': is_working,
+                    'ip': geo_info['ip'],
+                    'city': geo_info['city'],
+                    'country': geo_info['country']
+                })
+            return proxy_details
 
 # Define the Email Harvester class
 class EmailHarvester:
@@ -54,7 +79,7 @@ class EmailHarvester:
         self.visited_urls: Set[str] = set()
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
         self.errors: Dict[str, str] = {}  # Dictionary to store errors
-        self.proxies = [proxy for proxy, status in proxies if status]  # Only keep working proxies
+        self.proxies = [proxy['proxy'] for proxy in proxies if proxy['is_working']]  # Only keep working proxies
 
     def get_random_proxy(self):
         """Get a random proxy from the list."""
@@ -147,7 +172,7 @@ async def main_async(urls: List[str], max_depth: int):
 
 # Streamlit app interface
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
-st.title("🌾🚜 Cloud Email Harvester with Proxy Status Indicator")
+st.title("🌾🚜 Cloud Email Harvester with Proxy Dashboard")
 
 # Input for URLs
 urls_input = st.text_area("Enter URLs (one per line):")
@@ -182,11 +207,11 @@ if st.button("Start Scraping"):
             else:
                 st.info("No emails found on the pages.")
 
-            # Display Proxy Status
-            st.subheader("Proxy Status")
-            for proxy, is_working in proxies:
-                color = "green" if is_working else "red"
-                st.markdown(f"<span style='color:{color}'>{proxy}</span>", unsafe_allow_html=True)
+            # Display Proxy Dashboard
+            st.subheader("Proxy Dashboard")
+            proxy_df = pd.DataFrame(proxies)
+            proxy_df['status'] = proxy_df['is_working'].apply(lambda x: '🟢 Working' if x else '🔴 Not Working')
+            st.write(proxy_df[['ip', 'city', 'country', 'status']])
 
             # Display Errors if any
             if errors:
