@@ -147,7 +147,7 @@ st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sideb
 st.title("🌾🚜 Cloud Email Harvester with Proxy Dashboard")
 
 # Display the image from GitHub using the raw URL
-st.image('hhttps://github.com/delldevmann/EmailGoon/blob/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png', caption="Email Harvester", use_column_width=True)
+st.image('https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png', caption="Email Harvester", use_column_width=True)
 
 if 'proxy_results' not in st.session_state:
     st.session_state['proxy_results'] = None
