@@ -172,7 +172,7 @@ async def main_async(urls: List[str], max_depth: int, selected_proxy: str):
 
 # Streamlit app interface
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
-st.title("🌾🚜 Cloud Email Harvester with Proxy Dashboard")
+st.title("🌾🚜 Cloud Email Harvester")
 
 # Initialize session state for selected proxy and proxy results
 if 'proxy_results' not in st.session_state:
