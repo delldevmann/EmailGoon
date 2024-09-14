@@ -174,17 +174,24 @@ async def main_async(urls: List[str], max_depth: int, selected_proxy: str):
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
 st.title("🌾🚜 Cloud Email Harvester with Proxy Dashboard")
 
+# Initialize session state for selected proxy and proxy results
+if 'proxy_results' not in st.session_state:
+    st.session_state['proxy_results'] = None
+if 'selected_proxy' not in st.session_state:
+    st.session_state['selected_proxy'] = None
+
 # Section 1: Proxy Validation
 st.subheader("Step 1: Validate Proxies")
-proxy_results = None
-selected_proxy = None
+proxy_results = st.session_state['proxy_results']
+selected_proxy = st.session_state['selected_proxy']
 
 if st.button("Validate Proxies"):
     try:
         with st.spinner("Fetching and validating proxies..."):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            proxy_results = loop.run_until_complete(fetch_free_proxies())
+            st.session_state['proxy_results'] = loop.run_until_complete(fetch_free_proxies())
+            proxy_results = st.session_state['proxy_results']
 
         # Display Proxy Dashboard
         if proxy_results:
@@ -203,10 +210,14 @@ if proxy_results:
     with st.expander("Step 2: Choose a Proxy and Start Scraping", expanded=True):
         st.subheader("Choose a Proxy")
         working_proxies = [f"{p['proxy']} ({p['city']}, {p['country']})" for p in proxy_results if p['is_working']]
-        selected_proxy_display = st.selectbox("Select a Proxy", working_proxies)
+        
+        # Store the selected proxy in session state
+        selected_proxy_display = st.selectbox("Select a Proxy", working_proxies, key='selected_proxy_display')
         
         # Extract just the proxy part for actual use
-        selected_proxy = selected_proxy_display.split()[0]  # This is just the proxy part like '123.45.67.89:8080'
+        if selected_proxy_display:
+            st.session_state['selected_proxy'] = selected_proxy_display.split()[0]  # Store the selected proxy
+            selected_proxy = st.session_state['selected_proxy']
         
         if selected_proxy:
             st.success(f"Selected Proxy: {selected_proxy_display}")
