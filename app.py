@@ -132,23 +132,23 @@ class EmailHarvester:
         return {urljoin(base_url, a_tag['href']) for a_tag in soup.find_all('a', href=True) if urlparse(urljoin(base_url, a_tag['href'])).netloc == urlparse(base_url).netloc}
 
     async def crawl(self, session: aiohttp.ClientSession, url: str, max_depth: int = 2) -> Set[str]:
-    if max_depth < 0 or url in self.visited_urls:
-        return set()
+        if max_depth < 0 or url in self.visited_urls:
+            return set()
 
-    self.visited_urls.add(url)
-    emails = set()
+        self.visited_urls.add(url)
+        emails = set()
 
-    html_content = await self.fetch_url(session, url)
-    emails.update(self.extract_emails(html_content))
+        html_content = await self.fetch_url(session, url)
+        emails.update(self.extract_emails(html_content))
 
-    if max_depth > 0:
-        links = self.extract_links(html_content, url)
-        tasks = [self.crawl(session, link, max_depth - 1) for link in links]
-        results = await asyncio.gather(*tasks)
-        for result in results:
-            emails.update(result)
+        if max_depth > 0:
+            links = self.extract_links(html_content, url)
+            tasks = [self.crawl(session, link, max_depth - 1) for link in links]
+            results = await asyncio.gather(*tasks)
+            for result in results:
+                emails.update(result)
 
-    return emails
+        return emails
 
     async def harvest_emails(self, urls: List[str], max_depth: int = 2) -> Set[str]:
         async with aiohttp.ClientSession() as session:
