@@ -12,7 +12,7 @@ import pandas as pd
 # Set the page configuration at the very top of the file
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
 
-# Add CSS to reduce the margin below the image
+# Add custom CSS to reduce margin below the image
 st.markdown(
     """
     <style>
@@ -24,13 +24,16 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Display the image from GitHub using raw URL inside markdown
+# Use st.markdown() with raw HTML to insert the image and apply the CSS class
 st.markdown(
     """
-    <img src='https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png' class='custom-image' alt='Email Harvester' width='100%'>
+    <div class="custom-image">
+        <img src='https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png' alt='Email Harvester' width='100%'>
+    </div>
     """,
     unsafe_allow_html=True
 )
+
 # Function to get the geolocation of a proxy IP
 async def get_proxy_geolocation(proxy):
     ip = proxy.split(':')[0]  # Get the IP part of the proxy
@@ -164,9 +167,7 @@ async def main_async(urls: List[str], max_depth: int, selected_proxy: str):
     emails = await harvester.harvest_emails(urls, max_depth)
     return emails, harvester.errors
 
-# Display the image from GitHub using the raw URL and apply the custom class for spacing
-st.image('https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png', caption="Email Harvester", use_column_width=True, class_="custom-image")
-
+# Streamlit app interface
 if 'proxy_results' not in st.session_state:
     st.session_state['proxy_results'] = None
 if 'selected_proxy' not in st.session_state:
