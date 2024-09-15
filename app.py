@@ -9,53 +9,44 @@ import chardet  # To detect encoding
 import streamlit as st
 import pandas as pd
 
-# Set page configuration at the top of the file
+# Set page configuration
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="expanded")
 
-# Add custom CSS to update layout and design
+# Add custom CSS for card-based layout
 st.markdown(
     """
     <style>
-    .custom-image {
-        margin-bottom: -50px;
-        display: flex;
-        justify-content: center;
+    .card {
+        background-color: white;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
+        padding: 20px;
+        margin-bottom: 20px;
     }
-    .proxy-table th, .proxy-table td {
-        padding: 10px;
-        text-align: center;
+    .card-title {
+        font-weight: bold;
+        color: #333;
     }
     .proxy-table {
-        border: 1px solid #ddd;
-        border-collapse: collapse;
         width: 100%;
+        margin-bottom: 20px;
+    }
+    .proxy-table th, .proxy-table td {
+        padding: 12px;
+        border: 1px solid #ddd;
+        text-align: center;
     }
     .proxy-table th {
-        background-color: #f2f2f2;
-    }
-    .status-green {
-        color: green;
-        font-weight: bold;
-    }
-    .status-red {
-        color: red;
-        font-weight: bold;
+        background-color: #f8f8f8;
     }
     </style>
-    """, unsafe_allow_html=True
-)
-
-# Use st.markdown() with raw HTML to insert the image and apply the CSS class
-st.markdown(
-    """
-    <div class="custom-image">
-        <img src='https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png' alt='Email Harvester' width='200px'>
-    </div>
     """,
     unsafe_allow_html=True
 )
 
-# Proxy logic and functions are retained from the previous code but updated for dynamic feedback
+# Add image at the top
+st.markdown("<div class='card'><h3 class='card-title'>📧 Email Harvester</h3></div>", unsafe_allow_html=True)
+
 async def test_proxy(proxy, session):
     test_url = "http://www.google.com"
     try:
@@ -91,7 +82,7 @@ async def fetch_free_proxies():
     async with aiohttp.ClientSession() as session:
         async with session.get(selected_source) as response:
             proxy_list = await response.text()
-            proxies = proxy_list.splitlines()[:10]  # Limit to 10 proxies for faster demo
+            proxies = proxy_list.splitlines()[:10]
             tasks = []
             for proxy in proxies:
                 tasks.append(
@@ -112,8 +103,9 @@ async def fetch_free_proxies():
 
             return proxy_details
 
-# Streamlit app interface for proxy validation
-st.subheader("Step 1: Validate Proxies")
+# Main interface
+st.markdown("<div class='card'><h4 class='card-title'>Step 1: Validate Proxies</h4></div>", unsafe_allow_html=True)
+
 proxy_results = st.session_state.get('proxy_results', None)
 
 if st.button("Validate Proxies"):
@@ -125,36 +117,11 @@ if st.button("Validate Proxies"):
             proxy_results = st.session_state['proxy_results']
 
         if proxy_results:
-            st.success("Proxies validated successfully!")
+            st.markdown("<div class='card'><h4 class='card-title'>Proxy Results</h4>", unsafe_allow_html=True)
             proxy_df = pd.DataFrame(proxy_results)
-            proxy_df['status'] = proxy_df['is_working'].apply(lambda x: '🟢 Working' if x else '🔴 Not Working')
-            
-            # Display updated table with color-coded status
-            st.markdown("""
-                <table class="proxy-table">
-                    <thead>
-                        <tr>
-                            <th>IP</th>
-                            <th>City</th>
-                            <th>Country</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                """, unsafe_allow_html=True)
+            proxy_df['status'] = proxy_df['is_working'].apply(lambda x: 'Working' if x else 'Not Working')
+            st.table(proxy_df[['ip', 'city', 'country', 'status']])
 
-            for index, row in proxy_df.iterrows():
-                status_class = "status-green" if row['status'] == '🟢 Working' else "status-red"
-                st.markdown(f"""
-                    <tr>
-                        <td>{row['ip']}</td>
-                        <td>{row['city']}</td>
-                        <td>{row['country']}</td>
-                        <td class="{status_class}">{row['status']}</td>
-                    </tr>
-                """, unsafe_allow_html=True)
-
-            st.markdown("</tbody></table>", unsafe_allow_html=True)
         else:
             st.info("No proxies found.")
     except Exception as e:
@@ -163,7 +130,7 @@ if st.button("Validate Proxies"):
 # Section 2: Choose Proxy and Start Scraping
 if proxy_results:
     with st.expander("Step 2: Choose a Proxy and Start Scraping", expanded=True):
-        st.subheader("Choose a Proxy")
+        st.markdown("<div class='card'><h4 class='card-title'>Choose a Proxy</h4></div>", unsafe_allow_html=True)
         working_proxies = [f"{p['proxy']} ({p['city']}, {p['country']})" for p in proxy_results if p['is_working']]
         selected_proxy_display = st.selectbox("Select a Proxy", working_proxies, key='selected_proxy_display')
         if selected_proxy_display:
@@ -182,4 +149,4 @@ if proxy_results:
                 st.success(f"Scraping started using proxy: {selected_proxy}")
 
 # Disclaimer
-st.warning("⚠️ Please ensure you have permission to scrape data from websites and comply with local regulations.")
+st.markdown("<div class='card'><p>⚠️ Please ensure you have permission to scrape data from websites and comply with local regulations.</p></div>", unsafe_allow_html=True)
