@@ -7,3 +7,4 @@ pandas
 pip
 setuptools
 numpy
+aiolimiter
