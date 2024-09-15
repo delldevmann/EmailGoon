@@ -96,13 +96,19 @@ async def test_proxy(session, proxy):
         return False, {"proxy": proxy, "is_working": False, "ip": proxy.split(':')[0], "city": "Unknown", "country": "Unknown", "error": str(e)}
     return False, {"proxy": proxy, "is_working": False, "ip": proxy.split(':')[0], "city": "Unknown", "country": "Unknown"}
 
-# Fetching proxies and validating them asynchronously
-async def main():
-    proxy_list = ['123.456.78.90:8080', '234.567.89.00:8080']  # Example proxies
+# Asynchronous main function to validate proxies
+async def main(proxy_list):
     validated_proxies = await validate_proxies(proxy_list, source="Sample Source")
     if validated_proxies:
         st.success("Proxies validated successfully!")
         save_working_proxies(validated_proxies)
+
+# Streamlit wrapper to handle asynchronous tasks properly
+def run_async_task(proxy_list):
+    loop = asyncio.new_event_loop()  # Create a new event loop for the task
+    asyncio.set_event_loop(loop)  # Set the event loop
+    loop.run_until_complete(main(proxy_list))  # Run the asynchronous task
+    loop.close()  # Close the loop after execution
 
 # Start scraping using working proxies with proxy rotation
 async def scrape_with_proxies(urls, max_depth=1):
@@ -142,7 +148,9 @@ def extract_emails(html_content: str) -> Set[str]:
 # Streamlit Interface
 st.subheader("Step 1: Validate Proxies")
 if st.button("Validate Proxies"):
-    asyncio.create_task(main())
+    # Example proxy list to validate
+    proxy_list = ['123.456.78.90:8080', '234.567.89.00:8080']  # Replace with your actual proxy list
+    run_async_task(proxy_list)
 
 # Display cool-off info
 st.subheader("Proxy Cool-Off Info")
