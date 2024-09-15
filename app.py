@@ -11,10 +11,10 @@ import streamlit as st
 import pandas as pd
 from aiolimiter import AsyncLimiter
 
-# Ensure that this is the first Streamlit command in your script
+# Set Streamlit page config (Ensure this is the first Streamlit command)
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
 
-# After setting the page config, you can add the image
+# Add the image after setting the page config
 st.image("https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png", width=300)
 
 # In-memory data structures for storing proxy status and cool-off periods
@@ -23,19 +23,6 @@ cool_off_proxies = {}
 working_proxies = []
 cool_off_duration = 600  # Cool-off period in seconds (10 minutes)
 max_failures_before_cool_off = 3
-
-# Set Streamlit page config
-st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
-
-# In-memory data structures for storing proxy status and cool-off periods (use Redis or a database in production)
-proxy_failure_counts = {}
-cool_off_proxies = {}
-working_proxies = []  # List of currently working proxies
-proxy_sources_reputation = {}  # Track source success rate
-cool_off_duration = 600  # Set cool-off period in seconds (10 minutes)
-max_failures_before_cool_off = 3
-failure_threshold = 10  # Failures before a proxy is permanently blacklisted
-
 # Rate limiter (5 requests per second)
 limiter = AsyncLimiter(max_rate=5, time_period=1)
 
