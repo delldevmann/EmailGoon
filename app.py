@@ -23,16 +23,16 @@ st.markdown(
 )
 
 # Title
-st.title("📧 Email Harvester")
+st.title("📧 Email Harvester - Wizard Interface")
 
 # Introduction text
-st.write("This tool allows you to validate proxies and scrape emails. The grid layout helps you access and view multiple functionalities at once.")
+st.write("Follow the steps below to validate proxies and scrape emails. You must complete each step before proceeding to the next.")
 
-# Create a two-column layout
-col1, col2 = st.columns(2)
+# Step 1: Validate Proxies
+if "step_1_completed" not in st.session_state:
+    st.session_state['step_1_completed'] = False
 
-# Column 1: Proxy Validation
-with col1:
+if not st.session_state['step_1_completed']:
     st.subheader("Step 1: Validate Proxies")
 
     async def test_proxy(proxy, session):
@@ -90,43 +90,3 @@ with col1:
                     })
 
                 return proxy_details
-
-    proxy_results = st.session_state.get('proxy_results', None)
-
-    if st.button("Validate Proxies"):
-        try:
-            with st.spinner("Fetching and validating proxies..."):
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                st.session_state['proxy_results'] = loop.run_until_complete(fetch_free_proxies())
-                proxy_results = st.session_state['proxy_results']
-
-            if proxy_results:
-                st.success("Proxies validated successfully!")
-                proxy_df = pd.DataFrame(proxy_results)
-                proxy_df['status'] = proxy_df['is_working'].apply(lambda x: 'Working' if x else 'Not Working')
-                st.table(proxy_df[['ip', 'city', 'country', 'status']])
-            else:
-                st.info("No proxies found.")
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-
-# Column 2: Scrape Emails
-with col2:
-    st.subheader("Step 2: Scrape Emails")
-
-    selected_proxy = st.session_state.get('selected_proxy', None)
-    if selected_proxy:
-        st.success(f"Selected Proxy: {selected_proxy}")
-    else:
-        st.warning("Please validate proxies first and select one.")
-
-    urls_input = st.text_area("Enter URLs (one per line):")
-    depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
-
-    if st.button("Start Scraping"):
-        if urls_input.strip() and selected_proxy:
-            st.success(f"Scraping started using proxy: {selected_proxy}")
-
-# Footer Disclaimer
-st.write("⚠️ **Please ensure you have permission to scrape data from websites and comply with local regulations.**")
