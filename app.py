@@ -12,16 +12,11 @@ import pandas as pd
 # Set page configuration
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="expanded")
 
-# Sidebar navigation
-page = st.sidebar.selectbox("Navigate", ["Home", "Validate Proxies", "Scrape Emails", "Help"])
+# Tabs for navigation
+tabs = st.tabs(["Validate Proxies", "Scrape Emails", "Help"])
 
-# Home page
-if page == "Home":
-    st.title("📧 Email Harvester")
-    st.write("Welcome to the Email Harvester tool! Use the sidebar to navigate between different sections.")
-
-# Proxy validation page
-elif page == "Validate Proxies":
+# Validate Proxies Tab
+with tabs[0]:
     st.header("Validate Proxies")
 
     async def test_proxy(proxy, session):
@@ -101,12 +96,12 @@ elif page == "Validate Proxies":
         except Exception as e:
             st.error(f"An error occurred: {e}")
 
-# Scrape emails page
-elif page == "Scrape Emails":
+# Scrape Emails Tab
+with tabs[1]:
     st.header("Scrape Emails")
     # Add scraping logic and URL input here
 
-# Help page
-elif page == "Help":
+# Help Tab
+with tabs[2]:
     st.header("Help and Documentation")
     st.write("Here you can provide details on how to use the app and important legal information.")
