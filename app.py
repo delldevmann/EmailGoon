@@ -11,10 +11,10 @@ import streamlit as st
 import pandas as pd
 from aiolimiter import AsyncLimiter
 
-# Set Streamlit page config
+# Ensure this is at the very top, before any other Streamlit commands
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
 
-# Adding the Image at the top
+# Add the image at the top
 st.image("https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png", width=300)
 
 # In-memory data structures for storing proxy status and cool-off periods
