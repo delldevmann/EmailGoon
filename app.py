@@ -10,6 +10,7 @@ import chardet
 import streamlit as st
 import pandas as pd
 from aiolimiter import AsyncLimiter
+from concurrent.futures import ThreadPoolExecutor
 
 # Set Streamlit page config (make sure this is the first Streamlit command)
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
@@ -103,54 +104,21 @@ async def main(proxy_list):
         st.success("Proxies validated successfully!")
         save_working_proxies(validated_proxies)
 
-# Streamlit wrapper to handle asynchronous tasks properly
-def run_async_task(proxy_list):
+# Function to run async task in a separate thread
+def run_async_task_in_thread(proxy_list):
     loop = asyncio.new_event_loop()  # Create a new event loop for the task
     asyncio.set_event_loop(loop)  # Set the event loop
     loop.run_until_complete(main(proxy_list))  # Run the asynchronous task
     loop.close()  # Close the loop after execution
-
-# Start scraping using working proxies with proxy rotation
-async def scrape_with_proxies(urls, max_depth=1):
-    async with aiohttp.ClientSession() as session:
-        all_emails = set()
-        for url in urls:
-            proxy = random.choice(working_proxies)  # Rotate proxies
-            try:
-                # Scrape using a random working proxy
-                html_content = await fetch_url(session, url, proxy)
-                emails = extract_emails(html_content)
-                all_emails.update(emails)
-            except Exception as e:
-                # Retry with a different proxy if failed
-                proxy_failure_counts[proxy] += 1
-                if proxy_failure_counts[proxy] >= max_failures_before_cool_off:
-                    cool_off_proxies[proxy] = time.time()
-
-        return all_emails
-
-# Fetch URL content using a proxy
-async def fetch_url(session, url, proxy):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
-    try:
-        async with session.get(url, headers=headers, proxy=f"http://{proxy}", timeout=10) as response:
-            raw_content = await response.content.read()
-            detected_encoding = chardet.detect(raw_content)['encoding'] or 'utf-8'
-            return raw_content.decode(detected_encoding, errors='replace')
-    except aiohttp.ClientError as e:
-        raise e  # Handle client errors (e.g., 403, 429)
-
-# Extract emails from HTML content
-def extract_emails(html_content: str) -> Set[str]:
-    email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
-    return set(email_pattern.findall(html_content)) if html_content else set()
 
 # Streamlit Interface
 st.subheader("Step 1: Validate Proxies")
 if st.button("Validate Proxies"):
     # Example proxy list to validate
     proxy_list = ['123.456.78.90:8080', '234.567.89.00:8080']  # Replace with your actual proxy list
-    run_async_task(proxy_list)
+    # Run the async task in a separate thread to avoid blocking Streamlit
+    with ThreadPoolExecutor() as executor:
+        executor.submit(run_async_task_in_thread, proxy_list)
 
 # Display cool-off info
 st.subheader("Proxy Cool-Off Info")
