@@ -12,12 +12,13 @@ import pandas as pd
 # Set page configuration
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="expanded")
 
-# Tabs for navigation
-tabs = st.tabs(["Validate Proxies", "Scrape Emails", "Help"])
+# Add some introductory text
+st.title("📧 Email Harvester")
+st.write("Validate proxies, harvest emails, and scrape websites with this tool. Use the sections below to perform different actions.")
 
-# Validate Proxies Tab
-with tabs[0]:
-    st.header("Validate Proxies")
+# Accordion-style sections
+with st.expander("Step 1: Validate Proxies", expanded=True):
+    st.write("Click to validate proxies and get their geolocation.")
 
     async def test_proxy(proxy, session):
         test_url = "http://www.google.com"
@@ -90,18 +91,30 @@ with tabs[0]:
                 proxy_df = pd.DataFrame(proxy_results)
                 proxy_df['status'] = proxy_df['is_working'].apply(lambda x: 'Working' if x else 'Not Working')
                 st.table(proxy_df[['ip', 'city', 'country', 'status']])
-
             else:
                 st.info("No proxies found.")
         except Exception as e:
             st.error(f"An error occurred: {e}")
 
-# Scrape Emails Tab
-with tabs[1]:
-    st.header("Scrape Emails")
-    # Add scraping logic and URL input here
+with st.expander("Step 2: Scrape Emails", expanded=False):
+    st.write("Enter URLs to scrape and select the depth for crawling.")
 
-# Help Tab
-with tabs[2]:
-    st.header("Help and Documentation")
-    st.write("Here you can provide details on how to use the app and important legal information.")
+    selected_proxy = st.session_state.get('selected_proxy', None)
+    if selected_proxy:
+        st.success(f"Selected Proxy: {selected_proxy}")
+    else:
+        st.warning("Please validate proxies first and select one.")
+
+    urls_input = st.text_area("Enter URLs (one per line):")
+    depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
+
+    if st.button("Start Scraping"):
+        if urls_input.strip() and selected_proxy:
+            st.success(f"Scraping started using proxy: {selected_proxy}")
+
+with st.expander("Step 3: View Results", expanded=False):
+    st.write("View or download the results of the scraping process once it completes.")
+    # Add logic for displaying or downloading scraping results
+
+# Footer section with a disclaimer
+st.write("⚠️ **Please ensure you have permission to scrape data from websites and comply with local regulations.**")
