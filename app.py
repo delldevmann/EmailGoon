@@ -14,6 +14,19 @@ from aiolimiter import AsyncLimiter
 # Set Streamlit page config
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
 
+# Adding the Image at the top
+st.image("https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png", width=300)
+
+# In-memory data structures for storing proxy status and cool-off periods
+proxy_failure_counts = {}
+cool_off_proxies = {}
+working_proxies = []
+cool_off_duration = 600  # Cool-off period in seconds (10 minutes)
+max_failures_before_cool_off = 3
+
+# Set Streamlit page config
+st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
+
 # In-memory data structures for storing proxy status and cool-off periods (use Redis or a database in production)
 proxy_failure_counts = {}
 cool_off_proxies = {}
