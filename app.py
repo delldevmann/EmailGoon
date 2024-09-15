@@ -1,6 +1,7 @@
 import asyncio
 import random
 import re
+import time
 from urllib.parse import urljoin, urlparse
 from typing import List, Set, Dict
 import aiohttp
@@ -71,10 +72,6 @@ async def get_proxy_geolocation(proxy):
 # Test if a proxy is working by making a request to a known website
 async def test_proxy(proxy, session):
     test_url = "http://www.google.com"
-    proxies = {
-        'http': f'http://{proxy}',
-        'https': f'http://{proxy}',
-    }
     try:
         async with session.get(test_url, proxy=f"http://{proxy}", timeout=5) as response:
             return response.status == 200
@@ -104,6 +101,8 @@ async def fetch_free_proxies():
 
             tasks = []
             for proxy in proxies:
+                if proxy in proxy_failure_counts and proxy_failure_counts[proxy] >= max_failures_before_cool_off and not check_cool_off(proxy):
+                    continue
                 tasks.append(
                     asyncio.gather(test_proxy(proxy, session), get_proxy_geolocation(proxy))
                 )
@@ -119,6 +118,17 @@ async def fetch_free_proxies():
                     'city': geo_info['city'],
                     'country': geo_info['country']
                 })
+                
+                # Update failure counts for non-working proxies
+                if not is_working:
+                    if proxy in proxy_failure_counts:
+                        proxy_failure_counts[proxy] += 1
+                    else:
+                        proxy_failure_counts[proxy] = 1
+                    if proxy_failure_counts[proxy] >= max_failures_before_cool_off:
+                        cool_off_proxies[proxy] = time.time()
+                else:
+                    proxy_failure_counts[proxy] = 0  # Reset on success
 
             return proxy_details
 
