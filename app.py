@@ -11,7 +11,7 @@ import streamlit as st
 import pandas as pd
 from aiolimiter import AsyncLimiter
 
-# Set Streamlit page config (Ensure this is the first Streamlit command)
+# Set Streamlit page config (make sure this is the first Streamlit command)
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
 
 # Add the image after setting the page config
@@ -21,12 +21,14 @@ st.image("https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-
 proxy_failure_counts = {}
 cool_off_proxies = {}
 working_proxies = []
+proxy_sources_reputation = {}
 cool_off_duration = 600  # Cool-off period in seconds (10 minutes)
 max_failures_before_cool_off = 3
+
 # Rate limiter (5 requests per second)
 limiter = AsyncLimiter(max_rate=5, time_period=1)
 
-# Cool-off checker
+# Check cool-off period for a proxy
 def check_cool_off(proxy):
     if proxy in cool_off_proxies:
         if time.time() - cool_off_proxies[proxy] > cool_off_duration:
@@ -74,8 +76,6 @@ async def validate_proxies(proxy_list, source):
                     proxy_failure_counts[proxy] += 1
                 else:
                     proxy_failure_counts[proxy] = 1
-                
-                # Apply cool-off if max failures are reached
                 if proxy_failure_counts[proxy] >= max_failures_before_cool_off:
                     cool_off_proxies[proxy] = time.time()
 
@@ -83,7 +83,7 @@ async def validate_proxies(proxy_list, source):
     proxy_sources_reputation[source] = success_count / total_proxies if total_proxies > 0 else 0
     return validated_proxies
 
-# Proxy testing function with failure handling and scoring
+# Proxy testing function with failure handling
 async def test_proxy(session, proxy):
     test_url = "http://www.google.com"
     try:
@@ -96,13 +96,15 @@ async def test_proxy(session, proxy):
         return False, {"proxy": proxy, "is_working": False, "ip": proxy.split(':')[0], "city": "Unknown", "country": "Unknown", "error": str(e)}
     return False, {"proxy": proxy, "is_working": False, "ip": proxy.split(':')[0], "city": "Unknown", "country": "Unknown"}
 
-# Async CAPTCHA solving (replace with your preferred CAPTCHA solving service)
-async def solve_captcha(captcha_image_url):
-    # Placeholder for CAPTCHA solving logic (e.g., using 2Captcha API)
-    # Send the CAPTCHA image to the service and get the result.
-    return "solved_captcha"
+# Fetching proxies and validating them asynchronously
+async def main():
+    proxy_list = ['123.456.78.90:8080', '234.567.89.00:8080']  # Example proxies
+    validated_proxies = await validate_proxies(proxy_list, source="Sample Source")
+    if validated_proxies:
+        st.success("Proxies validated successfully!")
+        save_working_proxies(validated_proxies)
 
-# Scraping function with proxy rotation
+# Start scraping using working proxies with proxy rotation
 async def scrape_with_proxies(urls, max_depth=1):
     async with aiohttp.ClientSession() as session:
         all_emails = set()
@@ -121,7 +123,7 @@ async def scrape_with_proxies(urls, max_depth=1):
 
         return all_emails
 
-# URL fetching with proxy rotation
+# Fetch URL content using a proxy
 async def fetch_url(session, url, proxy):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
     try:
@@ -140,21 +142,16 @@ def extract_emails(html_content: str) -> Set[str]:
 # Streamlit Interface
 st.subheader("Step 1: Validate Proxies")
 if st.button("Validate Proxies"):
-    # Assume proxies have been fetched
-    proxy_list = ['123.456.78.90:8080', '234.567.89.00:8080']  # Example proxies
-    validated_proxies = asyncio.run(validate_proxies(proxy_list, source="Sample Source"))
-    if validated_proxies:
-        st.success("Proxies validated successfully!")
-        save_working_proxies(validated_proxies)
+    asyncio.create_task(main())
 
-# Adding a section for cool-off information
+# Display cool-off info
 st.subheader("Proxy Cool-Off Info")
 if cool_off_proxies:
     st.info(f"Proxies currently cooling off: {len(cool_off_proxies)}")
 
-# CAPTCHA solving section (placeholder for CAPTCHA image input)
+# Add CAPTCHA solving placeholder if needed
 st.subheader("CAPTCHA Solving")
 captcha_image_url = st.text_input("Enter CAPTCHA Image URL")
 if captcha_image_url:
-    captcha_solution = asyncio.run(solve_captcha(captcha_image_url))
-    st.success(f"CAPTCHA Solved: {captcha_solution}")
+    # Example CAPTCHA solving logic (replace with real CAPTCHA solving logic)
+    st.success(f"CAPTCHA Solved: solved_captcha_value")
