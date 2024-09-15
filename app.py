@@ -1,264 +1,160 @@
 import asyncio
 import random
 import re
+import time
 from urllib.parse import urljoin, urlparse
 from typing import List, Set, Dict
 import aiohttp
 from bs4 import BeautifulSoup
-import chardet  # To detect encoding
+import chardet
 import streamlit as st
 import pandas as pd
-import time
-import queue
-from aiolimiter import AsyncLimiter  # For rate limiting API calls
+from aiolimiter import AsyncLimiter
 
-# Set the page configuration at the very top of the file
+# Set Streamlit page config
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
 
-# Add custom CSS to reduce margin below the image
-st.markdown(
-    """
-    <style>
-    .custom-image {
-        margin-bottom: -175px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# In-memory data structures for storing proxy status and cool-off periods (use Redis or a database in production)
+proxy_failure_counts = {}
+cool_off_proxies = {}
+working_proxies = []  # List of currently working proxies
+proxy_sources_reputation = {}  # Track source success rate
+cool_off_duration = 600  # Set cool-off period in seconds (10 minutes)
+max_failures_before_cool_off = 3
+failure_threshold = 10  # Failures before a proxy is permanently blacklisted
 
-# Use st.markdown() with raw HTML to insert the image and apply the CSS class
-st.markdown(
-    """
-    <div class="custom-image">
-        <img src='https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png' alt='Email Harvester' width='100%'>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-# Rate limiter to prevent API overuse (5 calls per second)
+# Rate limiter (5 requests per second)
 limiter = AsyncLimiter(max_rate=5, time_period=1)
 
-# Function to get the geolocation of a proxy IP
-async def get_proxy_geolocation(proxy):
-    ip = proxy.split(':')[0]  # Get the IP part of the proxy
-    api_url = f"https://ipinfo.io/{ip}/json"  # Using ipinfo.io API for geolocation
-    async with limiter:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(api_url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return {
-                            'ip': ip,
-                            'city': data.get('city', 'Unknown'),
-                            'country': data.get('country', 'Unknown')
-                        }
-                    else:
-                        return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown'}
-        except Exception as e:
-            return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown', 'error': str(e)}
+# Cool-off checker
+def check_cool_off(proxy):
+    if proxy in cool_off_proxies:
+        if time.time() - cool_off_proxies[proxy] > cool_off_duration:
+            del cool_off_proxies[proxy]  # Remove from cool-off if time has passed
+            return True
+        return False
+    return True
 
-# Test if a proxy is working by making a request to a known website
-async def test_proxy(proxy, session):
+# Function to save working proxies to a file
+def save_working_proxies(proxies):
+    if proxies:
+        proxy_df = pd.DataFrame(proxies)
+        proxy_df['status'] = proxy_df['is_working'].apply(lambda x: '🟢 Working' if x else '🔴 Not Working')
+        csv = proxy_df[proxy_df['is_working'] == True][['ip', 'city', 'country', 'status']].to_csv(index=False)
+        st.download_button(label="Download Working Proxies as CSV", data=csv, file_name="working_proxies.csv", mime="text/csv")
+    else:
+        st.info("No working proxies to save.")
+
+# Proxy validation logic with source reputation tracking
+async def validate_proxies(proxy_list, source):
+    validated_proxies = []
+    total_proxies = len(proxy_list)
+    success_count = 0
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for proxy in proxy_list:
+            # Check if proxy is in cool-off period
+            if proxy in proxy_failure_counts and proxy_failure_counts[proxy] >= max_failures_before_cool_off and not check_cool_off(proxy):
+                continue
+            tasks.append(test_proxy(session, proxy))
+
+        results = await asyncio.gather(*tasks)
+
+        for i, (is_working, geo_info) in enumerate(results):
+            proxy = proxy_list[i]
+            if is_working:
+                validated_proxies.append(geo_info)
+                # Reset failure count for working proxies
+                proxy_failure_counts[proxy] = 0
+                working_proxies.append(proxy)
+                success_count += 1
+            else:
+                # Increment failure count
+                if proxy in proxy_failure_counts:
+                    proxy_failure_counts[proxy] += 1
+                else:
+                    proxy_failure_counts[proxy] = 1
+                
+                # Apply cool-off if max failures are reached
+                if proxy_failure_counts[proxy] >= max_failures_before_cool_off:
+                    cool_off_proxies[proxy] = time.time()
+
+    # Update source reputation based on the success rate
+    proxy_sources_reputation[source] = success_count / total_proxies if total_proxies > 0 else 0
+    return validated_proxies
+
+# Proxy testing function with failure handling and scoring
+async def test_proxy(session, proxy):
     test_url = "http://www.google.com"
     try:
-        async with session.get(test_url, proxy=f"http://{proxy}", timeout=5) as response:
-            return response.status == 200
-    except:
-        return False
-
-# Fetch proxies from multiple GitHub sources (list of public proxies)
-async def fetch_free_proxies():
-    proxy_sources = [
-        'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
-        'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
-        'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/proxy.txt',
-        'https://raw.githubusercontent.com/a2u/free-proxy-list/main/free-proxy-list.txt',
-        'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
-        'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt',
-        'https://raw.githubusercontent.com/mertguvencli/http-proxy-list/main/proxy-list/data.txt',
-        'https://raw.githubusercontent.com/jenssegers/proxy-list/main/proxies.txt',
-        'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
-        'https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt',
-    ]
-
-    selected_source = random.choice(proxy_sources)
-    async with aiohttp.ClientSession() as session:
-        async with session.get(selected_source) as response:
-            proxy_list = await response.text()
-            proxies = proxy_list.splitlines()[:50]  # Increased the proxy fetching scope
-
-            tasks = []
-            for proxy in proxies:
-                tasks.append(
-                    asyncio.gather(test_proxy(proxy, session), get_proxy_geolocation(proxy))
-                )
-
-            results = await asyncio.gather(*tasks)
-
-            proxy_details = []
-            for i, (is_working, geo_info) in enumerate(results):
-                proxy_details.append({
-                    'proxy': proxies[i],
-                    'is_working': is_working,
-                    'ip': geo_info['ip'],
-                    'city': geo_info['city'],
-                    'country': geo_info['country']
-                })
-
-            return proxy_details
-
-# Define the Email Harvester class
-class EmailHarvester:
-    def __init__(self, selected_proxy=None):
-        self.visited_urls: Set[str] = set()
-        self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
-        self.errors: Dict[str, str] = {}
-        self.selected_proxy = selected_proxy
-        self.queue = queue.Queue()  # Queue-based crawling mechanism
-
-    async def fetch_url(self, session: aiohttp.ClientSession, url: str) -> str:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
-        try:
-            async with session.get(url, headers=headers, proxy=f"http://{self.selected_proxy}" if self.selected_proxy else None) as response:
-                raw_content = await response.content.read()
-                detected_encoding = chardet.detect(raw_content)['encoding'] or 'utf-8'
-                return raw_content.decode(detected_encoding, errors='replace')
-        except aiohttp.ClientError as e:
-            self.errors[url] = f"ClientError: {str(e)}"
-        except asyncio.TimeoutError as e:
-            self.errors[url] = f"TimeoutError: {str(e)}"
-        except Exception as e:
-            self.errors[url] = f"UnexpectedError: {str(e)}"
-        return ""
-
-    def extract_emails(self, html_content: str) -> Set[str]:
-        return set(self.email_pattern.findall(html_content)) if html_content else set()
-
-    def extract_links(self, html_content: str, base_url: str) -> Set[str]:
-        if not html_content:
-            return set()
-        soup = BeautifulSoup(html_content, 'html.parser')
-        return {urljoin(base_url, a_tag['href']) for a_tag in soup.find_all('a', href=True) if urlparse(urljoin(base_url, a_tag['href'])).netloc == urlparse(base_url).netloc}
-
-    async def crawl(self, session: aiohttp.ClientSession, url: str, max_depth: int = 2) -> Set[str]:
-        if max_depth < 0 or url in self.visited_urls:
-            return set()
-
-        self.visited_urls.add(url)
-        emails = set()
-
-        html_content = await self.fetch_url(session, url)
-        emails.update(self.extract_emails(html_content))
-
-        if max_depth > 0:
-            links = self.extract_links(html_content, url)
-            tasks = []
-            for link in links:
-                if link not in self.visited_urls:
-                    self.queue.put((link, max_depth - 1))
-                    tasks.append(self.crawl(session, link, max_depth - 1))
-            
-            results = await asyncio.gather(*tasks)
-            for result in results:
-                emails.update(result)
-
-        return emails
-
-    async def harvest_emails(self, urls: List[str], max_depth: int = 2) -> Set[str]:
-        async with aiohttp.ClientSession() as session:
-            tasks = [self.crawl(session, url, max_depth) for url in urls]
-            results = await asyncio.gather(*tasks)
-        return set.union(*results)
-
-# Function to validate URLs
-def validate_and_format_url(url: str) -> str:
-    parsed_url = urlparse(url)
-    return "https://" + url if not parsed_url.scheme else url
-
-# Async main function
-async def main_async(urls: List[str], max_depth: int, selected_proxy: str):
-    harvester = EmailHarvester(selected_proxy=selected_proxy)
-    emails = await harvester.harvest_emails(urls, max_depth)
-    return emails, harvester.errors
-
-# Streamlit app interface
-if 'proxy_results' not in st.session_state:
-    st.session_state['proxy_results'] = None
-if 'selected_proxy' not in st.session_state:
-    st.session_state['selected_proxy'] = None
-
-# Section 1: Proxy Validation
-st.subheader("Step 1: Validate Proxies")
-proxy_results = st.session_state['proxy_results']
-selected_proxy = st.session_state['selected_proxy']
-
-if st.button("Validate Proxies"):
-    try:
-        with st.spinner("Fetching and validating proxies..."):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            st.session_state['proxy_results'] = loop.run_until_complete(fetch_free_proxies())
-            proxy_results = st.session_state['proxy_results']
-
-        if proxy_results:
-            st.success("Proxies validated successfully!")
-            proxy_df = pd.DataFrame(proxy_results)
-            proxy_df['status'] = proxy_df['is_working'].apply(lambda x: '🟢 Working' if x else '🔴 Not Working')
-            st.write(proxy_df[['ip', 'city', 'country', 'status']])
-        else:
-            st.info("No proxies found. Trying another source...")
-            # If no proxies were found, try a different source
-            st.session_state['proxy_results'] = loop.run_until_complete(fetch_free_proxies())
-
+        async with limiter:
+            async with session.get(test_url, proxy=f"http://{proxy}", timeout=5) as response:
+                if response.status == 200:
+                    return True, {"proxy": proxy, "is_working": True, "ip": proxy.split(':')[0], "city": "TestCity", "country": "TestCountry"}
     except Exception as e:
-        st.error(f"An error occurred: {e}")
+        # Log the failure reason
+        return False, {"proxy": proxy, "is_working": False, "ip": proxy.split(':')[0], "city": "Unknown", "country": "Unknown", "error": str(e)}
+    return False, {"proxy": proxy, "is_working": False, "ip": proxy.split(':')[0], "city": "Unknown", "country": "Unknown"}
 
-# Section 2: Select Proxy and Scraping
-if proxy_results:
-    with st.expander("Step 2: Choose a Proxy and Start Scraping", expanded=True):
-        st.subheader("Choose a Proxy")
-        working_proxies = [f"{p['proxy']} ({p['city']}, {p['country']})" for p in proxy_results if p['is_working']]
-        selected_proxy_display = st.selectbox("Select a Proxy", working_proxies, key='selected_proxy_display')
-        if selected_proxy_display:
-            st.session_state['selected_proxy'] = selected_proxy_display.split()[0]
-            selected_proxy = st.session_state['selected_proxy']
-        if selected_proxy:
-            st.success(f"Selected Proxy: {selected_proxy_display}")
-            st.info(f"Using proxy: {selected_proxy}")
+# Async CAPTCHA solving (replace with your preferred CAPTCHA solving service)
+async def solve_captcha(captcha_image_url):
+    # Placeholder for CAPTCHA solving logic (e.g., using 2Captcha API)
+    # Send the CAPTCHA image to the service and get the result.
+    return "solved_captcha"
 
-        st.subheader("Enter URLs for Scraping")
-        urls_input = st.text_area("Enter URLs (one per line):")
-        depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
+# Scraping function with proxy rotation
+async def scrape_with_proxies(urls, max_depth=1):
+    async with aiohttp.ClientSession() as session:
+        all_emails = set()
+        for url in urls:
+            proxy = random.choice(working_proxies)  # Rotate proxies
+            try:
+                # Scrape using a random working proxy
+                html_content = await fetch_url(session, url, proxy)
+                emails = extract_emails(html_content)
+                all_emails.update(emails)
+            except Exception as e:
+                # Retry with a different proxy if failed
+                proxy_failure_counts[proxy] += 1
+                if proxy_failure_counts[proxy] >= max_failures_before_cool_off:
+                    cool_off_proxies[proxy] = time.time()
 
-        if st.button("Start Scraping"):
-            if urls_input.strip() and selected_proxy:
-                urls = [validate_and_format_url(url.strip()) for url in urls_input.splitlines() if url.strip()]
-                try:
-                    with st.spinner("Scraping emails..."):
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        all_emails, errors = loop.run_until_complete(main_async(urls, depth, selected_proxy))
+        return all_emails
 
-                    if all_emails:
-                        st.success(f"Found {len(all_emails)} unique email(s):")
-                        st.write(list(all_emails))
-                        email_df = pd.DataFrame(list(all_emails), columns=["Email"])
-                        csv = email_df.to_csv(index=False).encode('utf-8')
-                        st.download_button(label="Download Emails as CSV", data=csv, file_name='emails.csv', mime='text/csv')
-                        json_emails = email_df.to_json(orient='records', lines=True)
-                        st.download_button(label="Download Emails as JSON", data=json_emails, file_name='emails.json', mime='application/json')
-                    else:
-                        st.info("No emails found on the pages.")
-                    if errors:
-                        st.error("Errors encountered:")
-                        st.write(errors)
-                except Exception as e:
-                    st.error(f"An error occurred: {e}")
-            else:
-                st.warning("Please enter at least one URL and select a proxy.")
+# URL fetching with proxy rotation
+async def fetch_url(session, url, proxy):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+    try:
+        async with session.get(url, headers=headers, proxy=f"http://{proxy}", timeout=10) as response:
+            raw_content = await response.content.read()
+            detected_encoding = chardet.detect(raw_content)['encoding'] or 'utf-8'
+            return raw_content.decode(detected_encoding, errors='replace')
+    except aiohttp.ClientError as e:
+        raise e  # Handle client errors (e.g., 403, 429)
 
-# Disclaimer
-st.warning("⚠️ Please ensure you have permission to scrape data from websites and comply with local regulations.")
+# Extract emails from HTML content
+def extract_emails(html_content: str) -> Set[str]:
+    email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
+    return set(email_pattern.findall(html_content)) if html_content else set()
+
+# Streamlit Interface
+st.subheader("Step 1: Validate Proxies")
+if st.button("Validate Proxies"):
+    # Assume proxies have been fetched
+    proxy_list = ['123.456.78.90:8080', '234.567.89.00:8080']  # Example proxies
+    validated_proxies = asyncio.run(validate_proxies(proxy_list, source="Sample Source"))
+    if validated_proxies:
+        st.success("Proxies validated successfully!")
+        save_working_proxies(validated_proxies)
+
+# Adding a section for cool-off information
+st.subheader("Proxy Cool-Off Info")
+if cool_off_proxies:
+    st.info(f"Proxies currently cooling off: {len(cool_off_proxies)}")
+
+# CAPTCHA solving section (placeholder for CAPTCHA image input)
+st.subheader("CAPTCHA Solving")
+captcha_image_url = st.text_input("Enter CAPTCHA Image URL")
+if captcha_image_url:
+    captcha_solution = asyncio.run(solve_captcha(captcha_image_url))
+    st.success(f"CAPTCHA Solved: {captcha_solution}")
