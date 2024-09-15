@@ -12,14 +12,28 @@ import pandas as pd
 # Set page configuration
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="expanded")
 
-# Form-based flow (Progressive form)
+# Add the image
+st.markdown(
+    """
+    <div style='text-align:center;'>
+        <img src='https://raw.githubusercontent.com/delldevmann/EmailGoon/main/2719aef3-8bc0-42cb-ae56-6cc2c791763f-removebg-preview.png' alt='Email Harvester' width='150'>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# Title
 st.title("📧 Email Harvester")
 
-# Step 1: Validate Proxies
-step_1_completed = st.checkbox("Step 1: Validate Proxies")
+# Introduction text
+st.write("This tool allows you to validate proxies and scrape emails. The grid layout helps you access and view multiple functionalities at once.")
 
-if step_1_completed:
-    st.subheader("Validate Proxies")
+# Create a two-column layout
+col1, col2 = st.columns(2)
+
+# Column 1: Proxy Validation
+with col1:
+    st.subheader("Step 1: Validate Proxies")
 
     async def test_proxy(proxy, session):
         test_url = "http://www.google.com"
@@ -97,24 +111,22 @@ if step_1_completed:
         except Exception as e:
             st.error(f"An error occurred: {e}")
 
-# Step 2: Scrape Emails
-if step_1_completed:
-    step_2_completed = st.checkbox("Step 2: Scrape Emails", value=False)
-    if step_2_completed:
-        selected_proxy = st.session_state.get('selected_proxy', None)
-        if selected_proxy:
-            st.success(f"Selected Proxy: {selected_proxy}")
-        else:
-            st.warning("Please validate proxies first and select one.")
+# Column 2: Scrape Emails
+with col2:
+    st.subheader("Step 2: Scrape Emails")
 
-        urls_input = st.text_area("Enter URLs (one per line):")
-        depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
+    selected_proxy = st.session_state.get('selected_proxy', None)
+    if selected_proxy:
+        st.success(f"Selected Proxy: {selected_proxy}")
+    else:
+        st.warning("Please validate proxies first and select one.")
 
-        if st.button("Start Scraping"):
-            if urls_input.strip() and selected_proxy:
-                st.success(f"Scraping started using proxy: {selected_proxy}")
+    urls_input = st.text_area("Enter URLs (one per line):")
+    depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
 
-# Step 3: View Results
-if step_1_completed and step_2_completed:
-    st.subheader("View or Download Results")
-    st.write("Results will be available here after scraping is complete.")
+    if st.button("Start Scraping"):
+        if urls_input.strip() and selected_proxy:
+            st.success(f"Scraping started using proxy: {selected_proxy}")
+
+# Footer Disclaimer
+st.write("⚠️ **Please ensure you have permission to scrape data from websites and comply with local regulations.**")
