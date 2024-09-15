@@ -156,10 +156,3 @@ if st.button("Validate Proxies"):
 st.subheader("Proxy Cool-Off Info")
 if cool_off_proxies:
     st.info(f"Proxies currently cooling off: {len(cool_off_proxies)}")
-
-# Add CAPTCHA solving placeholder if needed
-st.subheader("CAPTCHA Solving")
-captcha_image_url = st.text_input("Enter CAPTCHA Image URL")
-if captcha_image_url:
-    # Example CAPTCHA solving logic (replace with real CAPTCHA solving logic)
-    st.success(f"CAPTCHA Solved: solved_captcha_value")
