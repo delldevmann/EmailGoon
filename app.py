@@ -12,13 +12,14 @@ import pandas as pd
 # Set page configuration
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="expanded")
 
-# Add some introductory text
+# Form-based flow (Progressive form)
 st.title("📧 Email Harvester")
-st.write("Validate proxies, harvest emails, and scrape websites with this tool. Use the sections below to perform different actions.")
 
-# Accordion-style sections
-with st.expander("Step 1: Validate Proxies", expanded=True):
-    st.write("Click to validate proxies and get their geolocation.")
+# Step 1: Validate Proxies
+step_1_completed = st.checkbox("Step 1: Validate Proxies")
+
+if step_1_completed:
+    st.subheader("Validate Proxies")
 
     async def test_proxy(proxy, session):
         test_url = "http://www.google.com"
@@ -96,25 +97,24 @@ with st.expander("Step 1: Validate Proxies", expanded=True):
         except Exception as e:
             st.error(f"An error occurred: {e}")
 
-with st.expander("Step 2: Scrape Emails", expanded=False):
-    st.write("Enter URLs to scrape and select the depth for crawling.")
+# Step 2: Scrape Emails
+if step_1_completed:
+    step_2_completed = st.checkbox("Step 2: Scrape Emails", value=False)
+    if step_2_completed:
+        selected_proxy = st.session_state.get('selected_proxy', None)
+        if selected_proxy:
+            st.success(f"Selected Proxy: {selected_proxy}")
+        else:
+            st.warning("Please validate proxies first and select one.")
 
-    selected_proxy = st.session_state.get('selected_proxy', None)
-    if selected_proxy:
-        st.success(f"Selected Proxy: {selected_proxy}")
-    else:
-        st.warning("Please validate proxies first and select one.")
+        urls_input = st.text_area("Enter URLs (one per line):")
+        depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
 
-    urls_input = st.text_area("Enter URLs (one per line):")
-    depth = st.number_input("Enter Crawl Depth (0 for no recursion)", min_value=0, value=1)
+        if st.button("Start Scraping"):
+            if urls_input.strip() and selected_proxy:
+                st.success(f"Scraping started using proxy: {selected_proxy}")
 
-    if st.button("Start Scraping"):
-        if urls_input.strip() and selected_proxy:
-            st.success(f"Scraping started using proxy: {selected_proxy}")
-
-with st.expander("Step 3: View Results", expanded=False):
-    st.write("View or download the results of the scraping process once it completes.")
-    # Add logic for displaying or downloading scraping results
-
-# Footer section with a disclaimer
-st.write("⚠️ **Please ensure you have permission to scrape data from websites and comply with local regulations.**")
+# Step 3: View Results
+if step_1_completed and step_2_completed:
+    st.subheader("View or Download Results")
+    st.write("Results will be available here after scraping is complete.")
