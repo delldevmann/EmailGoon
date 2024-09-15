@@ -8,6 +8,9 @@ from bs4 import BeautifulSoup
 import chardet  # To detect encoding
 import streamlit as st
 import pandas as pd
+import time
+import queue
+from aiolimiter import AsyncLimiter  # For rate limiting API calls
 
 # Set the page configuration at the very top of the file
 st.set_page_config(page_title='Email Harvester', page_icon='📧', initial_sidebar_state="auto")
@@ -34,24 +37,28 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Rate limiter to prevent API overuse (5 calls per second)
+limiter = AsyncLimiter(max_rate=5, time_period=1)
+
 # Function to get the geolocation of a proxy IP
 async def get_proxy_geolocation(proxy):
     ip = proxy.split(':')[0]  # Get the IP part of the proxy
     api_url = f"https://ipinfo.io/{ip}/json"  # Using ipinfo.io API for geolocation
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return {
-                        'ip': ip,
-                        'city': data.get('city', 'Unknown'),
-                        'country': data.get('country', 'Unknown')
-                    }
-                else:
-                    return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown'}
-    except Exception as e:
-        return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown', 'error': str(e)}
+    async with limiter:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return {
+                            'ip': ip,
+                            'city': data.get('city', 'Unknown'),
+                            'country': data.get('country', 'Unknown')
+                        }
+                    else:
+                        return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown'}
+        except Exception as e:
+            return {'ip': ip, 'city': 'Unknown', 'country': 'Unknown', 'error': str(e)}
 
 # Test if a proxy is working by making a request to a known website
 async def test_proxy(proxy, session):
@@ -81,7 +88,7 @@ async def fetch_free_proxies():
     async with aiohttp.ClientSession() as session:
         async with session.get(selected_source) as response:
             proxy_list = await response.text()
-            proxies = proxy_list.splitlines()[:20]
+            proxies = proxy_list.splitlines()[:50]  # Increased the proxy fetching scope
 
             tasks = []
             for proxy in proxies:
@@ -110,6 +117,7 @@ class EmailHarvester:
         self.email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
         self.errors: Dict[str, str] = {}
         self.selected_proxy = selected_proxy
+        self.queue = queue.Queue()  # Queue-based crawling mechanism
 
     async def fetch_url(self, session: aiohttp.ClientSession, url: str) -> str:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
@@ -118,9 +126,13 @@ class EmailHarvester:
                 raw_content = await response.content.read()
                 detected_encoding = chardet.detect(raw_content)['encoding'] or 'utf-8'
                 return raw_content.decode(detected_encoding, errors='replace')
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            self.errors[url] = f"{type(e).__name__}: {str(e)}"
-            return ""
+        except aiohttp.ClientError as e:
+            self.errors[url] = f"ClientError: {str(e)}"
+        except asyncio.TimeoutError as e:
+            self.errors[url] = f"TimeoutError: {str(e)}"
+        except Exception as e:
+            self.errors[url] = f"UnexpectedError: {str(e)}"
+        return ""
 
     def extract_emails(self, html_content: str) -> Set[str]:
         return set(self.email_pattern.findall(html_content)) if html_content else set()
@@ -143,7 +155,12 @@ class EmailHarvester:
 
         if max_depth > 0:
             links = self.extract_links(html_content, url)
-            tasks = [self.crawl(session, link, max_depth - 1) for link in links]
+            tasks = []
+            for link in links:
+                if link not in self.visited_urls:
+                    self.queue.put((link, max_depth - 1))
+                    tasks.append(self.crawl(session, link, max_depth - 1))
+            
             results = await asyncio.gather(*tasks)
             for result in results:
                 emails.update(result)
@@ -192,7 +209,9 @@ if st.button("Validate Proxies"):
             proxy_df['status'] = proxy_df['is_working'].apply(lambda x: '🟢 Working' if x else '🔴 Not Working')
             st.write(proxy_df[['ip', 'city', 'country', 'status']])
         else:
-            st.info("No proxies found.")
+            st.info("No proxies found. Trying another source...")
+            # If no proxies were found, try a different source
+            st.session_state['proxy_results'] = loop.run_until_complete(fetch_free_proxies())
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
